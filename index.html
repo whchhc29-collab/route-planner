@@ -1,0 +1,2116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行路 · 路线规划台</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';">
+<style>
+:root{
+  --paper:#f2eee4;
+  --paper-2:#faf8f2;
+  --paper-3:#e8e3d6;
+  --ink:#1c1a16;
+  --ink-2:#4a463d;
+  --ink-3:#847d6d;
+  --rule:#cdc4b0;
+  --red:#c0392b;
+  --red-2:#e05c46;
+  --blue:#2b4a6f;
+  --green:#2f6b4f;
+  --amber:#a8761c;
+  --violet:#5b3f7a;
+  --shadow:0 18px 44px -20px rgba(28,26,22,.45);
+  --shadow-s:0 6px 18px -12px rgba(28,26,22,.55);
+  --f-display:"Songti SC","STSong","Source Han Serif SC","Noto Serif SC","SimSun",serif;
+  --f-body:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Helvetica Neue",sans-serif;
+  --f-mono:"Consolas","SFMono-Regular","JetBrains Mono","Roboto Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--f-body);color:var(--ink);background:var(--paper);
+  overflow:hidden;-webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit}
+.hidden{display:none !important}
+
+/* ================= 布局 ================= */
+#app{position:absolute;inset:0}
+/* 左栏 = 可浮动窗口：可拖动、四边/四角可缩放 */
+#side{
+  position:absolute;left:18px;top:18px;width:430px;height:calc(100% - 36px);
+  min-width:320px;min-height:340px;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,#fbf9f3,#f4f0e6);
+  border:1px solid var(--rule);z-index:1050;box-shadow:var(--shadow);overflow:hidden;
+}
+#side .rz{position:absolute;z-index:30;touch-action:none}
+#side .rz.n{left:14px;right:14px;top:0;height:6px;cursor:ns-resize}
+#side .rz.s{left:14px;right:14px;bottom:0;height:6px;cursor:ns-resize}
+#side .rz.w{top:14px;bottom:14px;left:0;width:6px;cursor:ew-resize}
+#side .rz.e{top:14px;bottom:14px;right:0;width:6px;cursor:ew-resize}
+#side .rz.nw{left:0;top:0;width:14px;height:14px;cursor:nwse-resize}
+#side .rz.ne{right:0;top:0;width:14px;height:14px;cursor:nesw-resize}
+#side .rz.sw{left:0;bottom:0;width:14px;height:14px;cursor:nesw-resize}
+#side .rz.se{right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize}
+#stage{position:absolute;inset:0}
+#map{position:absolute;inset:0;background:#e8e4da}
+.leaflet-tile-pane{filter:saturate(.22) contrast(.97) brightness(1.01)}
+
+/* ================= 报头 ================= */
+.masthead{
+  flex:none;padding:16px 22px 13px;border-bottom:1px solid var(--rule);
+  background:linear-gradient(180deg,var(--paper-2),#f3efe5);position:relative;
+  cursor:move;user-select:none;
+}
+.masthead button,.masthead input{cursor:pointer;user-select:auto}
+.masthead::after{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)}
+.masthead .kicker{
+  font-family:var(--f-mono);font-size:9.5px;letter-spacing:.28em;color:var(--ink-3);
+  text-transform:uppercase;margin-bottom:6px;
+}
+.masthead h1{font-family:var(--f-display);font-size:23px;font-weight:700;letter-spacing:.03em;line-height:1.15}
+.masthead h1 em{font-style:normal;color:var(--red)}
+.masthead .sub{margin-top:7px;font-size:11.5px;color:var(--ink-3);display:flex;gap:12px;flex-wrap:wrap}
+.masthead .sub b{font-family:var(--f-mono);font-weight:600;color:var(--ink-2)}
+#keyChip{
+  font-family:var(--f-mono);font-size:10px;padding:2px 8px;border:1px solid var(--rule);
+  cursor:pointer;transition:.18s;white-space:nowrap;
+}
+#keyChip:hover{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+#keyChip.ok{border-color:var(--green);color:var(--green)}
+#keyChip.bad{border-color:var(--red);color:var(--red)}
+
+/* ================= 滚动区 ================= */
+#sideBody{flex:1;overflow-y:auto;padding:0 20px 34px}
+#sideBody::-webkit-scrollbar{width:8px}
+#sideBody::-webkit-scrollbar-thumb{background:var(--rule);border-radius:8px}
+
+/* ================= 对话框气泡 ================= */
+.bubble{padding:16px 0 14px;border-bottom:1px dashed var(--rule);position:relative}
+.bubble:last-of-type{border-bottom:0}
+.q{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+.q .idx{
+  font-family:var(--f-mono);font-size:10px;font-weight:700;color:var(--red);
+  border:1px solid var(--red);border-radius:50%;width:17px;height:17px;
+  display:inline-flex;align-items:center;justify-content:center;flex:none;transform:translateY(1px);
+}
+.q .txt{font-size:13.5px;font-weight:600;letter-spacing:.02em}
+.q .hint{margin-left:auto;font-size:10.5px;color:var(--ink-3);font-family:var(--f-mono);white-space:nowrap}
+
+/* 输入框 */
+.field{position:relative;display:flex;gap:8px;align-items:center}
+.inp{
+  flex:1;width:100%;border:1px solid var(--rule);background:var(--paper-2);
+  padding:9px 11px;font-size:13px;color:var(--ink);outline:none;transition:.16s;
+}
+.inp:focus{border-color:var(--ink);background:#fff}
+.inp::placeholder{color:#b3ab99}
+.mini{
+  border:1px solid var(--rule);background:transparent;padding:9px 11px;font-size:11.5px;
+  color:var(--ink-2);white-space:nowrap;transition:.16s;flex:none;
+}
+.mini:hover{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+.mini.warn{border-color:var(--amber);color:var(--amber)}
+
+/* 联想下拉 */
+.suggest{
+  position:absolute;left:0;right:0;top:calc(100% + 3px);z-index:700;
+  background:var(--paper-2);border:1px solid var(--ink);box-shadow:var(--shadow);
+  max-height:230px;overflow-y:auto;
+}
+.suggest .it{padding:8px 11px;font-size:12.5px;cursor:pointer;border-bottom:1px solid #ece6d8}
+.suggest .it:last-child{border-bottom:0}
+.suggest .it:hover,.suggest .it.act{background:#efe9db}
+.suggest .it b{font-weight:600}
+.suggest .it span{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
+
+/* 目的地行 */
+.dest{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.dest .no{
+  font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3);width:16px;flex:none;text-align:center;
+}
+.dest .del{
+  border:1px solid var(--rule);background:transparent;width:32px;height:32px;flex:none;
+  color:var(--ink-3);font-size:14px;line-height:1;transition:.16s;
+}
+.dest .del:hover{border-color:var(--red);color:var(--red)}
+.addline{
+  border:1px dashed var(--rule);background:transparent;width:100%;padding:7px;
+  font-size:12px;color:var(--ink-2);transition:.16s;
+}
+.addline:hover{border-color:var(--ink);color:var(--ink);background:#f6f1e5}
+
+/* 芯片组 */
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{
+  border:1px solid var(--rule);background:var(--paper-2);padding:6px 12px;font-size:12.5px;
+  color:var(--ink-2);transition:.16s;
+}
+.chip:hover{border-color:var(--ink-2)}
+.chip.on{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+.chip.on.red{background:var(--red);border-color:var(--red)}
+.chip.dis{opacity:.4;cursor:not-allowed}
+
+/* 开关行 */
+.optline{display:flex;align-items:center;gap:9px;margin-top:10px;font-size:12.5px;color:var(--ink-2);cursor:pointer;user-select:none}
+.optline input{display:none}
+.optline .bx{width:14px;height:14px;border:1.5px solid var(--ink-3);flex:none;position:relative;transition:.16s}
+.optline input:checked + .bx{background:var(--red);border-color:var(--red)}
+.optline input:checked + .bx::after{
+  content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;
+  border:solid var(--paper-2);border-width:0 2px 2px 0;transform:rotate(42deg);
+}
+.optline input:checked ~ span{color:var(--ink);font-weight:600}
+
+/* 主按钮 */
+.go{
+  width:100%;margin-top:14px;border:0;background:var(--ink);color:var(--paper-2);
+  padding:13px;font-size:14px;letter-spacing:.12em;font-weight:600;transition:.18s;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+}
+.go:hover{background:var(--red)}
+.go:disabled{background:var(--ink-3);cursor:progress}
+.go .sp{
+  width:13px;height:13px;border:2px solid rgba(250,248,242,.35);border-top-color:var(--paper-2);
+  border-radius:50%;animation:spin .7s linear infinite;display:none;
+}
+.go.busy .sp{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ================= 结果 ================= */
+#results{margin-top:6px}
+.sec-t{
+  display:flex;align-items:baseline;gap:9px;margin:18px 0 11px;
+  padding-bottom:7px;border-bottom:1px solid var(--ink);
+}
+.sec-t .n{font-family:var(--f-mono);font-size:10.5px;color:var(--red);font-weight:700;letter-spacing:.1em}
+.sec-t .t{font-family:var(--f-display);font-size:15.5px;font-weight:700;letter-spacing:.03em}
+.sec-t .m{margin-left:auto;font-size:10.5px;color:var(--ink-3);font-family:var(--f-mono)}
+
+.card{
+  border:1px solid var(--rule);background:var(--paper-2);margin-bottom:11px;
+  box-shadow:var(--shadow-s);overflow:hidden;cursor:pointer;transition:.18s;position:relative;
+}
+.card:hover{border-color:var(--ink-2);transform:translateX(2px)}
+.card.sel{border-color:var(--rc,var(--red));box-shadow:0 0 0 2px var(--rc,var(--red)),var(--shadow-s)}
+.card .top{display:grid;grid-template-columns:5px 1fr auto;align-items:stretch}
+.card .bar{background:var(--rc,var(--red))}
+.card .mid{padding:11px 13px;min-width:0}
+.card .mid .name{font-size:13.5px;font-weight:700;line-height:1.3;margin-bottom:4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .mid .lines{font-size:11.5px;color:var(--ink-2);line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .rt{padding:11px 13px 11px 8px;text-align:right;white-space:nowrap}
+.card .big{font-family:var(--f-mono);font-size:19px;font-weight:700;color:var(--rc,var(--red));line-height:1.1}
+.card .big small{font-size:10px;font-weight:400;color:var(--ink-3)}
+.card .meta{font-size:10.5px;color:var(--ink-3);margin-top:3px;font-family:var(--f-mono)}
+.card .flag{
+  position:absolute;top:0;right:0;font-family:var(--f-mono);font-size:9.5px;
+  background:var(--rc,var(--red));color:#fff;padding:2px 7px;letter-spacing:.08em;
+}
+/* 步骤清单 */
+.steps{list-style:none;margin:10px 0 2px;counter-reset:s}
+.steps li{
+  counter-increment:s;position:relative;padding:0 0 11px 26px;font-size:12.5px;
+  color:var(--ink-2);line-height:1.6;
+}
+.steps li::before{
+  content:counter(s);position:absolute;left:0;top:1px;width:17px;height:17px;
+  border:1px solid var(--ink-3);border-radius:50%;font-family:var(--f-mono);font-size:9.5px;
+  color:var(--ink-2);display:flex;align-items:center;justify-content:center;
+}
+.steps li::after{content:"";position:absolute;left:8px;top:20px;bottom:2px;width:1px;background:var(--rule)}
+.steps li:last-child{padding-bottom:2px}
+.steps li:last-child::after{display:none}
+.steps li.ride::before{border-color:#2563EB;color:#2563EB;background:#eaf1fd}
+.steps li em{font-style:normal;color:var(--ink-3);font-size:11px}
+.steps li b{color:var(--ink);font-weight:600}
+
+/* 多段表 */
+.legs{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+.legs th{
+  font-family:var(--f-mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;font-weight:600;padding:0 0 6px;border-bottom:1px solid var(--ink);
+}
+.legs td{padding:8px 0;border-bottom:1px solid #e6dfcf;color:var(--ink-2);vertical-align:top}
+.legs tr:last-child td{border-bottom:0}
+.legs td.num, .legs th.num{text-align:right;font-family:var(--f-mono);font-weight:600;color:var(--ink);white-space:nowrap}
+.legs tr.legrow{cursor:pointer}
+.legs tr.legrow:hover{background:#f2ece0}
+.legs tr.legrow.on{background:#efe6d6}
+.legs .sw{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.sumline{
+  display:flex;gap:6px 16px;flex-wrap:wrap;margin-top:11px;padding:11px 13px;
+  background:#eee8d9;border:1px solid var(--rule);font-size:12.5px;color:var(--ink-2);
+}
+.sumline b{font-family:var(--f-mono);color:var(--ink);margin-left:4px}
+
+.note{
+  font-size:11.5px;color:var(--ink-3);line-height:1.65;padding:10px 12px;
+  border-left:3px solid var(--rule);background:#f7f3e9;margin-top:10px;
+}
+.err{
+  font-size:12.5px;color:#7a2018;line-height:1.6;padding:11px 13px;
+  border:1px solid #e2b4ad;background:#fbeeeb;margin-top:10px;
+}
+.err b{display:block;margin-bottom:3px}
+.emptymsg{text-align:center;color:var(--ink-3);font-size:12px;padding:34px 10px;line-height:1.8}
+
+/* 逐段出行方式控件 */
+.legctl{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;
+  padding:10px 12px;border:1px dashed var(--rule);background:#f7f3e9;
+}
+.legctl .lab{font-size:11.5px;color:var(--ink-3);font-family:var(--f-mono);letter-spacing:.04em}
+.legctl .modesel{
+  border:1px solid var(--rule);background:var(--paper-2);padding:6px 8px;
+  font-size:12px;color:var(--ink);outline:none;
+}
+.legctl .modecust{
+  flex:1;min-width:130px;border:1px solid var(--rule);background:#fff;
+  padding:6px 9px;font-size:12px;color:var(--ink);outline:none;
+}
+.legctl .modecust:focus{border-color:var(--ink)}
+/* 提交建议入口 */
+.fbentry{
+  display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;
+  padding:11px;border:1px dashed var(--violet);color:var(--violet);text-decoration:none;
+  font-size:12.5px;letter-spacing:.06em;transition:.18s;background:rgba(91,63,122,.05);
+}
+.fbentry:hover{background:var(--violet);color:#fff;border-color:var(--violet)}
+
+/* ================= 地图叠加 ================= */
+.mapcard{
+  position:absolute;z-index:450;background:rgba(250,248,242,.95);border:1px solid var(--rule);
+  box-shadow:var(--shadow-s);padding:11px 14px;backdrop-filter:blur(6px);
+}
+.mapcard .lab{
+  font-family:var(--f-mono);font-size:9px;letter-spacing:.2em;color:var(--ink-3);
+  text-transform:uppercase;margin-bottom:8px;
+}
+#legend{right:14px;bottom:14px;max-width:250px}
+#legend .row{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-2);margin:4px 0}
+#legend .sw{width:20px;height:0;border-top:3px solid var(--red);flex:none;border-radius:2px}
+#legend .dot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;flex:none;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+#legend .tiny{font-size:10px;color:var(--ink-3);margin-top:7px;padding-top:6px;border-top:1px dashed var(--rule);line-height:1.5}
+#mapstat{right:14px;top:14px;text-align:right}
+#mapstat .v{font-family:var(--f-mono);font-size:11.5px;color:var(--ink);font-weight:600}
+#mapstat .v b{color:var(--green)}
+.tilebtns{display:flex;gap:0;margin-top:9px;border:1px solid var(--rule);overflow:hidden}
+.tilebtns button{border:0;background:transparent;padding:5px 11px;font-size:11.5px;color:var(--ink-2);transition:.16s}
+.tilebtns button + button{border-left:1px solid var(--rule)}
+.tilebtns button.on{background:var(--ink);color:var(--paper-2)}
+.leaflet-popup-content{font-size:12.5px;line-height:1.55}
+
+/* ================= Key 引导门 ================= */
+#gate{
+  position:absolute;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, #fbf7ec 0%, transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, #efe6d2 0%, transparent 55%),
+    var(--paper);
+  padding:26px;overflow-y:auto;
+}
+#gate .box{
+  width:min(680px,100%);background:var(--paper-2);border:1px solid var(--rule);
+  box-shadow:var(--shadow);position:relative;padding:32px 38px 30px;
+  animation:drop .6s cubic-bezier(.2,.8,.25,1) both;
+}
+@keyframes drop{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
+#gate .box::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--red)}
+#gate .kicker{font-family:var(--f-mono);font-size:10px;letter-spacing:.3em;color:var(--ink-3);
+  text-transform:uppercase;margin-bottom:9px}
+#gate h1{font-family:var(--f-display);font-size:30px;font-weight:700;letter-spacing:.03em;line-height:1.15}
+#gate h1 em{font-style:normal;color:var(--red)}
+#gate .lede{margin-top:12px;font-size:13px;color:var(--ink-2);line-height:1.75}
+#gate .lede b{color:var(--ink)}
+#gate .steps-mini{
+  margin:20px 0 20px;padding:16px 18px;background:#f6f1e5;border:1px dashed var(--rule);
+  font-size:12.5px;color:var(--ink-2);line-height:1.95;
+}
+#gate .steps-mini .h{font-weight:700;color:var(--ink);margin-bottom:7px;font-size:12.5px}
+#gate .steps-mini code{
+  font-family:var(--f-mono);font-size:11.5px;background:#e7e0cf;padding:1px 5px;color:#7a2018;
+}
+#gate .krow{display:flex;gap:9px;align-items:center}
+#gate .krow .inp{padding:12px 13px;font-family:var(--f-mono);font-size:13px;letter-spacing:.04em}
+#gate .go{margin-top:16px}
+#gate .msg{font-size:12px;margin-top:11px;min-height:17px;line-height:1.5}
+#gate .msg.ok{color:var(--green)}
+#gate .msg.bad{color:var(--red)}
+#gate .foot{
+  margin-top:20px;padding-top:15px;border-top:1px dashed var(--rule);
+  font-size:11px;color:var(--ink-3);line-height:1.7;
+}
+#gate .skip{
+  background:transparent;border:0;color:var(--ink-3);font-size:11.5px;
+  text-decoration:underline;text-underline-offset:3px;padding:0;
+}
+#gate .skip:hover{color:var(--ink)}
+
+/* ================= AI 弹层 ================= */
+.modal{
+  position:absolute;inset:0;z-index:1300;display:flex;align-items:center;justify-content:center;
+  background:rgba(28,26,22,.42);padding:24px;backdrop-filter:blur(2px);
+}
+.modal .box{
+  width:min(560px,100%);max-height:88vh;overflow-y:auto;background:var(--paper-2);
+  border:1px solid var(--rule);box-shadow:var(--shadow);padding:26px 30px 24px;position:relative;
+}
+.modal .box::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--violet)}
+.modal h2{font-family:var(--f-display);font-size:20px;letter-spacing:.02em;margin-bottom:5px}
+.modal .kicker{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.24em;color:var(--ink-3);
+  text-transform:uppercase;margin-bottom:8px}
+.modal .desc{font-size:12px;color:var(--ink-3);line-height:1.7;margin-bottom:16px}
+.frow{margin-bottom:12px}
+.frow label{display:block;font-size:11.5px;color:var(--ink-2);margin-bottom:5px;font-weight:600}
+.frow .inp, .frow select{padding:9px 11px;font-size:12.5px;width:100%;
+  border:1px solid var(--rule);background:var(--paper);color:var(--ink);outline:none}
+.frow .inp:focus,.frow select:focus{border-color:var(--ink)}
+.mfoot{display:flex;gap:10px;margin-top:18px}
+.mfoot .go{flex:1;margin-top:0;padding:11px}
+.mfoot .cancel{border:1px solid var(--rule);background:transparent;padding:11px 18px;font-size:13px;color:var(--ink-2)}
+.mfoot .cancel:hover{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+.xbtn{
+  position:absolute;top:18px;right:18px;border:1px solid var(--rule);background:transparent;
+  width:28px;height:28px;color:var(--ink-2);font-size:14px;line-height:1;transition:.16s;
+}
+.xbtn:hover{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+.nlbox{
+  border:1px solid var(--violet);background:#f4f1f8;padding:13px 15px;margin-top:2px;
+}
+.nlbox .t{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.18em;color:var(--violet);
+  text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.nlrow{display:flex;gap:8px}
+.nlrow .inp{background:#fff;border-color:#cfc3dd}
+.nlrow .mini{border-color:var(--violet);color:var(--violet)}
+.nlrow .mini:hover{background:var(--violet);color:#fff;border-color:var(--violet)}
+
+@media (max-width:880px){
+  #side{left:8px;top:8px;width:calc(100% - 16px);height:52%}
+  #legend{display:none}
+  #gate .box{padding:24px 20px}
+  #gate h1{font-size:24px}
+}
+</style>
+</head>
+<body>
+<div id="app" class="hidden">
+  <!-- ========== 左：对话式输入 ========== -->
+  <aside id="side">
+    <!-- 四边 / 四角缩放把手 -->
+    <div class="rz n" data-dir="n"></div><div class="rz s" data-dir="s"></div>
+    <div class="rz w" data-dir="w"></div><div class="rz e" data-dir="e"></div>
+    <div class="rz nw" data-dir="nw"></div><div class="rz ne" data-dir="ne"></div>
+    <div class="rz sw" data-dir="sw"></div><div class="rz se" data-dir="se"></div>
+    <div class="masthead">
+      <div class="kicker">ROUTE PLANNER / 实时高德数据 · 全国</div>
+      <h1>行路 · <em id="cityLabel">全国</em>路线规划台</h1>
+      <div class="sub">
+        <span>输入起点与目的地</span>
+        <span>·</span>
+        <span>选方案</span>
+        <span>·</span>
+        <span>地图画线</span>
+        <span style="margin-left:auto"><button id="keyChip" class="hidden">改 Key</button></span>
+      </div>
+    </div>
+
+    <div id="sideBody">
+      <!-- 起点 -->
+      <div class="bubble">
+        <div class="q"><span class="idx">1</span><span class="txt">从哪里出发？</span>
+          <span class="hint" id="geoHint"></span></div>
+        <div class="field">
+          <input id="originInp" class="inp" placeholder="输入地名，如「北京西站」「上海虹桥」" autocomplete="off">
+          <button id="geoBtn" class="mini">我的位置</button>
+        </div>
+        <div class="field" style="margin-top:8px">
+          <input id="cityScopeInp" class="inp" placeholder="城市范围（可选）：如 北京 / 上海，留空 = 全国" autocomplete="off">
+        </div>
+        <div id="originSug" class="suggest hidden"></div>
+      </div>
+
+      <!-- 目的地 -->
+      <div class="bubble">
+        <div class="q"><span class="idx">2</span><span class="txt">要去哪里？</span>
+          <span class="hint" id="modeHint">1 个目的地 = 单次</span></div>
+        <div id="dests"></div>
+        <button id="addDest" class="addline">＋ 再加一个目的地（多次 / 多站）</button>
+      </div>
+
+      <!-- 偏好 -->
+      <div class="bubble" id="prefWrap">
+        <div class="q"><span class="idx">3</span><span class="txt">有什么偏好？</span></div>
+        <div class="chips" id="prefChips"></div>
+      </div>
+
+      <!-- 方式 -->
+      <div class="bubble">
+        <div class="q"><span class="idx">4</span><span class="txt">怎么走？</span>
+          <span class="hint" id="engHint"></span></div>
+        <div class="chips" id="modeChips"></div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:8px;line-height:1.6">
+          可多选。规划时每段默认用第一项，出结果后还能逐段改（下拉点选，或手填「自理」方式，如 骑行+公交）。
+        </div>
+        <div style="margin-top:12px">
+          <div class="q" style="font-size:12px">起终点不同城时怎么走？<span class="hint">仅跨城时生效</span></div>
+          <div class="chips" id="crossChips"></div>
+        </div>
+        <label class="optline" id="loopWrap" style="display:none">
+          <input type="checkbox" id="loopChk"><span class="bx"></span>
+          <span>闭环：走完所有目的地后回到起点</span>
+        </label>
+      </div>
+
+      <!-- 出发时间 -->
+      <div class="bubble">
+        <div class="q"><span class="idx">5</span><span class="txt">什么时候出发？</span>
+          <span class="hint">可留空</span></div>
+        <div class="field">
+          <input type="datetime-local" id="depInp" class="inp" style="font-family:var(--f-mono);font-size:12.5px">
+        </div>
+      </div>
+
+      <button id="goBtn" class="go"><span class="sp"></span><span class="lb">规划路线</span></button>
+
+      <a id="fbEntry" class="fbentry" href="feedback.html" target="_blank" rel="noopener">对路线规划有建议？去反馈板留言 →</a>
+
+      <!-- AI 自然语言（可选） -->
+      <div class="nlbox" id="nlBox">
+        <div class="t"><span>AI 直说 · 可选</span><span style="flex:1;border-top:1px dashed #cfc3dd"></span>
+          <button id="aiCfgBtn" class="hidden" style="background:none;border:0;color:var(--violet);font-family:var(--f-mono);font-size:9.5px;letter-spacing:.1em;text-decoration:underline">配置</button>
+        </div>
+        <div class="nlrow">
+          <input id="nlInp" class="inp" placeholder="例：从北京西站出发，先去三里屯再去鸟巢，最后回酒店">
+          <button id="nlBtn" class="mini">解析</button>
+        </div>
+        <div id="nlMsg" style="font-size:11px;color:var(--ink-3);margin-top:7px;line-height:1.55">
+          未配置 AI 模型（可接 DeepSeek / 通义 / GLM / Kimi / OpenAI / 本地 Ollama）。
+          <button id="aiSetup" style="background:none;border:0;color:var(--violet);text-decoration:underline;font-size:11px;padding:0">去配置 →</button>
+        </div>
+      </div>
+
+      <div id="results"></div>
+    </div>
+  </aside>
+
+  <!-- ========== 右：地图 ========== -->
+  <main id="stage">
+    <div id="map"></div>
+    <div class="mapcard" id="mapstat">
+      <div class="lab">DATA SOURCE</div>
+      <div class="v" id="srcVal">等待规划</div>
+      <div class="tilebtns">
+        <button data-tile="vec" class="on">矢量</button>
+        <button data-tile="sat">卫星</button>
+      </div>
+    </div>
+    <div class="mapcard" id="legend">
+      <div class="lab">LEGEND / 图例</div>
+      <div class="row"><span class="sw" style="border-color:#2563EB"></span>轨道交通 / 公交（乘车段）</div>
+      <div class="row"><span class="sw" style="border-color:#94A3B8;border-top-style:dashed"></span>步行段</div>
+      <div class="row"><span class="sw" style="border-color:#0F766E"></span>驾车段</div>
+      <div class="row"><span class="sw" style="border-color:#7C3AED"></span>骑行段</div>
+      <div class="row"><span class="sw" style="border-color:#DB2777;border-top-style:dashed"></span>跨城段（自行安排）</div>
+      <div class="row"><span class="dot" style="background:#0F766E"></span>起点</div>
+      <div class="row"><span class="dot" style="background:#7C3AED"></span>终点 / 换乘点</div>
+      <div class="tiny">底图与路线数据均来自高德地图 API（GCJ-02 坐标），路线为实时查询结果。</div>
+    </div>
+  </main>
+</div>
+
+<!-- ========== Key 引导门 ========== -->
+<div id="gate">
+  <div class="box">
+    <div class="kicker">SETUP · 一次性配置</div>
+    <h1>先接入你的<em>高德 Key</em></h1>
+    <div class="lede">
+      这个页面<b>不内置任何密钥</b>，你需要填一个自己的高德「Web 服务」Key 才能查实时路线。<br>
+      Key 只存在你<b>本机浏览器</b>（localStorage），不会上传给任何服务器；刷新和关掉页面都还在。
+    </div>
+
+    <div class="steps-mini">
+      <div class="h">怎么拿到 Key（约 3 分钟，免费）</div>
+      1. 打开 <b>lbs.amap.com</b> → 注册 / 登录 → 完成 <b>个人实名认证</b><br>
+      2. 进「控制台 → 应用管理 → 我的应用」→ <b>创建新应用</b><br>
+      3. 点「添加 Key」，服务平台<b>必须选「Web服务」</b><br>
+      &nbsp;&nbsp;（别选「Web端(JS API)」，两者不通用，本页要的是 Web服务）<br>
+      4. 复制那串 <code>32 位字符</code>，粘到下面
+    </div>
+
+    <div class="krow">
+      <input id="gateKey" class="inp" placeholder="粘贴 32 位高德 Web 服务 Key" autocomplete="off" spellcheck="false">
+    </div>
+    <button id="gateBtn" class="go"><span class="sp"></span><span class="lb">验证并进入</span></button>
+    <div id="gateMsg" class="msg"></div>
+
+    <div class="foot">
+      免费 Key 有 QPS 限制，本页已做「串行 + 间隔 + 自动重试」来规避。<br>
+      <button id="gateSkip" class="skip">先跳过，看看界面（不查真实路线）</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== AI 配置弹层 ========== -->
+<div id="aiModal" class="modal hidden">
+  <div class="box">
+    <button class="xbtn" id="aiClose">×</button>
+    <div class="kicker">AI LAYER · 可选</div>
+    <h2>接入任意大模型</h2>
+    <div class="desc">
+      用 <b>OpenAI 兼容协议</b>，任何支持的模型都能填。配好后就能用「一句话生成路线」——
+      模型只负责把你的话拆成起点 / 目的地 / 偏好，<b>路线本身仍由高德计算</b>。<br>
+      配置只存在本机浏览器。
+    </div>
+
+    <div class="frow">
+      <label>供应商预设</label>
+      <select id="aiPreset">
+        <option value="deepseek">DeepSeek（深度求索）</option>
+        <option value="doubao">豆包 / 火山方舟（Ark）</option>
+        <option value="dashscope">通义千问（阿里云 DashScope）</option>
+        <option value="zhipu">智谱 GLM</option>
+        <option value="kimi">Kimi（月之暗面）</option>
+        <option value="openai">OpenAI</option>
+        <option value="ollama">本地 Ollama</option>
+        <option value="custom">自定义（任意 OpenAI 兼容）</option>
+      </select>
+    </div>
+    <div class="frow">
+      <label>Base URL</label>
+      <input id="aiBase" class="inp" spellcheck="false" placeholder="https://api.deepseek.com/v1">
+    </div>
+    <div class="frow">
+      <label>API Key</label>
+      <input id="aiKey" class="inp" spellcheck="false" placeholder="sk-...（本地 Ollama 可留空）">
+    </div>
+    <div class="frow">
+      <label>模型名</label>
+      <input id="aiModel" class="inp" spellcheck="false" placeholder="deepseek-chat">
+      <div id="aiHint" style="font-size:11px;color:var(--ink-3);margin-top:6px;line-height:1.5"></div>
+    </div>
+    <div class="mfoot">
+      <button id="aiSave" class="go"><span class="sp"></span><span class="lb">保存并测试</span></button>
+      <button id="aiClear" class="cancel">清除</button>
+    </div>
+    <div id="aiMsg" class="msg" style="font-size:12px;margin-top:12px;min-height:17px;line-height:1.5"></div>
+    <div class="note" style="margin-top:14px">
+      提示：浏览器直连这些 API 需要对方支持跨域（CORS）。DeepSeek / 通义 / GLM / Kimi 通常可直接用；
+      本地 Ollama 需设置环境变量 <code style="font-family:var(--f-mono)">OLLAMA_ORIGINS=*</code>。
+      若被浏览器拦截，请换服务商或自建代理，非本页问题。
+    </div>
+  </div>
+</div>
+
+<script>
+/* Leaflet 多 CDN 兜底加载：任一成功即可；全部失败时标记 __leafletFailed，由页面给出明确提示，不再变成死页 */
+(function(){
+  var SRI = 'sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH';
+  var cdns = [
+    { src:'https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.js', integrity:SRI },
+    { src:'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js', integrity:SRI },
+    { src:'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', integrity:SRI }
+  ];
+  var i = 0;
+  (function attempt(){
+    if (i >= cdns.length){ window.__leafletFailed = true; return; }
+    var c = cdns[i++];
+    var s = document.createElement('script');
+    s.src = c.src;
+    if (c.integrity){ s.integrity = c.integrity; s.crossOrigin = 'anonymous'; }
+    s.onload = function(){ window.__leafletOK = true; };
+    s.onerror = function(){ s.remove(); attempt(); };
+    document.head.appendChild(s);
+  })();
+})();
+</script>
+<script>
+"use strict";
+/* =========================================================================
+   行路 · 路线规划台（全国版）
+   纯静态单文件 · 无后端 · 使用访客自己的高德 Web 服务 Key
+   ========================================================================= */
+
+/* ---------- 0. 常量 ---------- */
+let CITY_LIMIT = '';                 // 可选「城市范围」；空 = 全国
+const CROSS_LABEL = { driving:'驾车', highspeed:'高铁', train:'火车', plane:'飞机', ship:'轮船' };
+const LS_AMAP = 'brp_amap_key_v1';
+const LS_AI   = 'brp_ai_cfg_v1';
+const PALETTE = ['#2563EB', '#0F766E', '#7C3AED', '#DB2777', '#94A3B8'];
+const STRAT_LABEL = { 0:'最快捷', 1:'最经济', 2:'最少换乘', 3:'最少步行', 4:'最舒适', 5:'不乘地铁' };
+const MODE_LABEL  = { transit:'公交地铁', driving:'驾车', walking:'步行', bicycling:'骑行' };
+const MODE_COLOR  = { transit:'#2563EB', driving:'#0F766E', walking:'#94A3B8', bicycling:'#7C3AED' };
+const WALK_COLOR  = '#94A3B8';
+const AI_PRESET = {
+  deepseek:  { base:'https://api.deepseek.com/v1',                              model:'deepseek-chat' },
+  doubao:    { base:'https://ark.cn-beijing.volces.com/api/v3',                 model:'' },
+  dashscope: { base:'https://dashscope.aliyuncs.com/compatible-mode/v1',        model:'qwen-plus' },
+  zhipu:     { base:'https://open.bigmodel.cn/api/paas/v4',                     model:'glm-4-flash' },
+  kimi:      { base:'https://api.moonshot.cn/v1',                               model:'moonshot-v1-8k' },
+  openai:    { base:'https://api.openai.com/v1',                                model:'gpt-4o-mini' },
+  ollama:    { base:'http://localhost:11434/v1',                                model:'qwen2.5' },
+  custom:    { base:'', model:'' }
+};
+
+let AMAP_KEY = lsGet(LS_AMAP) || '';
+
+/* ---------- 1. 状态 ---------- */
+const S = {
+  origin: null,                 // {name,lng,lat}
+  dests: [ null ],              // [{name,lng,lat}]
+  mode: 'transit',              // 主方式（= modes[0]）
+  modes: ['transit'],           // ④「怎么走」多选池
+  legMode: 'transit',           // 单次：当前那一段用的方式
+  legCustom: '',                // 单次：手填「自理」方式的文字
+  crossMode: 'driving',          // 跨城方式
+  strategy: 0,
+  loop: false,
+  plans: [],                    // 单次模式候选
+  sel: -1,
+  multi: null,                  // 多次模式结果
+  selLeg: -1
+};
+
+/* ---------- 2. 小工具 ---------- */
+const $  = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+/* localStorage 安全读写：隐私模式/禁用存储时降级，不让整页崩溃 */
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e){ return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); return true; } catch (e){ return false; } }
+function lsDel(k){ try { localStorage.removeItem(k); } catch (e){} }
+/* 全局错误兜底：未捕获的异常不再静默失败，给一次可见提示 */
+let __fatalShown = false;
+function __showFatal(msg){
+  if (__fatalShown) return;
+  __fatalShown = true;
+  const el = $('#gateMsg') || $('#nlMsg');
+  if (el){ el.className = 'msg bad'; el.textContent = '✗ 页面出现异常：' + msg + '（建议刷新，若反复出现请反馈）'; }
+}
+window.addEventListener('error', e => __showFatal((e && e.message) || '未知错误'));
+window.addEventListener('unhandledrejection', e => {
+  const r = e && e.reason;
+  __showFatal((r && (r.message || r)) || '未知错误');
+});
+const fmtTime = (t) => { t = String(t || ''); return t.length === 4 ? t.slice(0, 2) + ':' + t.slice(2) : (t || '—'); };
+const fmtDur = (sec) => {
+  sec = Math.round(+sec || 0);
+  if (sec < 60) return sec + ' 秒';
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h ? h + ' 时 ' + m + ' 分' : m + ' 分钟';
+};
+const fmtDurShort = (sec) => {
+  sec = Math.round(+sec || 0);
+  if (sec < 3600) return Math.round(sec / 60) + ' min';
+  return (sec / 3600).toFixed(1) + ' h';
+};
+const fmtDist = (m) => {
+  m = +m || 0;
+  return m < 1000 ? Math.round(m) + ' 米' : (m / 1000).toFixed(1) + ' 公里';
+};
+const money = (v) => { const n = +v || 0; return '¥' + (Number.isInteger(n) ? n : n.toFixed(1)); };
+
+/* WGS-84 → GCJ-02（浏览器定位用；高德自身返回的坐标已是 GCJ-02，勿重复转换） */
+function wgs2gcj(lng, lat){
+  const a = 6378245.0, ee = 0.00669342162296594323;
+  const out = (l, b) => (l < 72.004 || l > 137.8347 || b < 0.8293 || b > 55.8271);
+  if (out(lng, lat)) return [lng, lat];
+  const tfLat = (x, y) => {
+    let r = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+    r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+    return r;
+  };
+  const tfLng = (x, y) => {
+    let r = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+    r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+    return r;
+  };
+  let dLat = tfLat(lng - 105, lat - 35), dLng = tfLng(lng - 105, lat - 35);
+  const rad = lat / 180 * Math.PI;
+  let m = Math.sin(rad); m = 1 - ee * m * m;
+  const sm = Math.sqrt(m);
+  dLat = (dLat * 180) / ((a * (1 - ee)) / (m * sm) * Math.PI);
+  dLng = (dLng * 180) / (a / sm * Math.cos(rad) * Math.PI);
+  return [lng + dLng, lat + dLat];
+}
+
+/* ---------- 3. 高德请求（串行 + 限速 + 重试） ---------- */
+const Q = { list: [], busy: false, last: 0 };
+const REQ_GAP = 800;      // 两次高德请求的最小间隔（毫秒），规避免费 Key 的 QPS 限制
+const REQ_TRIES = 5;      // 单个请求的最大尝试次数
+const REQ_TIMEOUT = 12000; // 单次 fetch 超时（毫秒），避免挂死堵住整个队列
+function serial(task){
+  return new Promise((res, rej) => { Q.list.push({ task, res, rej }); pump(); });
+}
+async function pump(){
+  if (Q.busy) return;
+  Q.busy = true;
+  while (Q.list.length){
+    const job = Q.list.shift();
+    const wait = REQ_GAP - (Date.now() - Q.last);
+    if (wait > 0) await sleep(wait);
+    try { job.res(await job.task()); }
+    catch (e) { job.rej(e); }
+    Q.last = Date.now();
+  }
+  Q.busy = false;
+}
+/** 带超时的 fetch→json；避免个别请求长时间无响应把整个串行队列堵死 */
+async function fetchJson(url){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), REQ_TIMEOUT);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    return await r.json();
+  } finally { clearTimeout(timer); }
+}
+/** 调高德 REST，带 QPS 重试。path 形如 '/geocode/geo' */
+function amap(path, params){
+  return serial(async () => {
+    const qs = Object.entries(params)
+      .map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    const url = 'https://restapi.amap.com/v3' + path + '?' + qs + '&key=' + encodeURIComponent(AMAP_KEY);
+    let lastErr = '';
+    for (let i = 0; i < REQ_TRIES; i++){
+      let j;
+      try { j = await fetchJson(url); }
+      catch (e){ lastErr = '网络请求失败或超时：' + (e.name === 'AbortError' ? '请求超时' : e.message); await sleep(800 + i * 300); continue; }
+      if (j.status === '1' || j.errcode === 0) return j;
+      const info = (j.info || j.errmsg || '') + '';
+      if (/CUQPS|LIMIT|TOO_FREQUENT|QPS/i.test(info) || /^(10004|10021)$/.test(j.infocode || '')){
+        await sleep(700 + i * 600); lastErr = '触发限流'; continue;
+      }
+      // 其它错误直接抛出（含信息码，便于提示）
+      const err = new Error(info || '未知错误');
+      err.infocode = j.infocode; throw err;
+    }
+    throw new Error(lastErr || '接口多次失败');
+  });
+}
+/* v4 接口（骑行）单独走一个 */
+function amapV4(path, params){
+  return serial(async () => {
+    const qs = Object.entries(params)
+      .map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    const url = 'https://restapi.amap.com/v4' + path + '?' + qs + '&key=' + encodeURIComponent(AMAP_KEY);
+    let lastErr = '';
+    for (let i = 0; i < REQ_TRIES; i++){
+      let j;
+      try { j = await fetchJson(url); }
+      catch (e){ lastErr = '网络请求失败或超时：' + (e.name === 'AbortError' ? '请求超时' : e.message); await sleep(800 + i * 300); continue; }
+      if (j.errcode === 0 || j.status === '1') return j;
+      const msg = (j.errmsg || j.info || '') + '';
+      if (/QPS|LIMIT/i.test(msg)){ await sleep(700 + i * 600); lastErr = '触发限流'; continue; }
+      const err = new Error(msg || '未知错误'); err.infocode = j.infocode; throw err;
+    }
+    throw new Error(lastErr || '接口多次失败');
+  });
+}
+
+/* ---------- 4. 地理编码 / 联想 / 逆地理 ---------- */
+/* 从高德对象里取「城市」：市辖区可能返回数组，取不到时退回省份 */
+function cityOf(o){
+  if (!o) return '';
+  const c = Array.isArray(o.city) ? (o.city[0] || '') : (o.city || '');
+  return c || o.province || '';
+}
+async function geocode(name, scope){
+  const cs = scope == null ? CITY_LIMIT : scope;
+  const hit = await geocodeTry(name, cs);
+  if (hit) return hit;
+  if (cs){
+    // 限定城市内没找到 → 退回全国再找一次，命中则采用并在结果顶部提示
+    const g = await geocodeTry(name, '');
+    if (g){
+      g.outOfScope = cs;
+      return g;
+    }
+  }
+  throw new Error('找不到地点「' + name + '」' + (cs ? '（已在「' + cs + '」及全国范围内查找）' : ''));
+}
+/** 单次地理编码尝试；查不到返回 null 而非抛错（便于上层兜底） */
+async function geocodeTry(name, cs){
+  const params = { address: name };
+  if (cs) params.city = cs;
+  let j;
+  try { j = await amap('/geocode/geo', params); }
+  catch (e){
+    // 高德对「无匹配结果 / 参数无命中」会返回这类错误；按「没匹配到」处理，交给上层兜底
+    if (/ENGINE_RESPONSE_DATA_ERROR|NO_DATA|INVALID_PARAMS|NO_ROADS_IN_CITY/i.test(e.message || '')) return null;
+    throw e;
+  }
+  const g = j.geocodes && j.geocodes[0];
+  if (!g || !g.location) return null;
+  const [lng, lat] = g.location.split(',').map(Number);
+  if (!isFinite(lng) || !isFinite(lat)) return null;
+  return { name: g.formatted_address || name, lng, lat, city: cityOf(g), province: g.province || '' };
+}
+async function regeoFull(lng, lat){
+  const j = await amap('/geocode/regeo', { location: lng.toFixed(6) + ',' + lat.toFixed(6), radius: 200 });
+  const r = (j && j.regeocode) || {};
+  const ac = r.addressComponent || {};
+  return {
+    addr: r.formatted_address || '当前位置',
+    city: cityOf(ac),
+    province: ac.province || ''
+  };
+}
+async function regeo(lng, lat){ return (await regeoFull(lng, lat)).addr; }
+/* 若某点缺少城市，用逆地理补齐（跨城判定用） */
+async function ensureCity(pt){
+  if (!pt || pt.city) return pt;
+  try { const r = await regeoFull(pt.lng, pt.lat); pt.city = r.city; pt.province = r.province; } catch (e){ /* 补不齐就不判跨城 */ }
+  return pt;
+}
+async function inputtips(kw){
+  const params = { keywords: kw };
+  if (CITY_LIMIT){ params.city = CITY_LIMIT; params.citylimit = 'true'; }
+  const j = await amap('/assistant/inputtips', params);
+  return (j.tips || [])
+    .filter(t => typeof t.location === 'string' && t.location.includes(','))
+    .map(t => {
+      const [lng, lat] = t.location.split(',').map(Number);
+      const dist = Array.isArray(t.district) ? '' : (t.district || '');
+      return { name: t.name, addr: dist, lng, lat, city: cityOf(t), province: t.province || '' };
+    });
+}
+
+/* ---------- 5. polyline 解析 ---------- */
+function parsePoly(str){
+  if (!str) return [];
+  const out = [];
+  for (const seg of String(str).split(';')){
+    const p = seg.split(',');
+    if (p.length !== 2) continue;
+    const lng = +p[0], lat = +p[1];
+    if (Number.isFinite(lng) && Number.isFinite(lat)) out.push([lat, lng]);
+  }
+  return out;
+}
+
+/* ---------- 6. 结果归一化 ---------- */
+/* 公交：一个 transit 对象 → 统一 plan */
+function planFromTransit(t){
+  const segs = []; let pts = [];
+  (t.segments || []).forEach(s => {
+    if (s.walking && s.walking.steps && s.walking.steps.length){
+      let wp = [];
+      s.walking.steps.forEach(st => { if (st.polyline) wp = wp.concat(parsePoly(st.polyline)); });
+      if (wp.length){
+        const d = +s.walking.distance || 0, du = +s.walking.duration || 0;
+        segs.push({ type:'walk', color:WALK_COLOR,
+          text: '步行 ' + fmtDist(d) + (du ? '（约 ' + Math.round(du / 60) + ' 分钟）' : ''),
+          pts: wp });
+        pts = pts.concat(wp);
+      }
+    }
+    if (s.bus && s.bus.buslines && s.bus.buslines.length){
+      const bl = s.bus.buslines[0];
+      const bp = parsePoly(bl.polyline);
+      const dep = bl.departure_stop && bl.departure_stop.name || '上车';
+      const arr = bl.arrival_stop && bl.arrival_stop.name || '下车';
+      const via = +bl.via_num || 0;
+      const du = +bl.duration || 0;
+      segs.push({ type:'ride', color: null /* 用方案主题色 */,
+        text: '乘 <b>' + esc(bl.name || '公交') + '</b>：' + esc(dep) + ' 上车 → ' + esc(arr) + ' 下车' +
+              (via ? '（' + via + ' 站' : '')  + (du ? (via ? '，' : '（') + '约 ' + Math.round(du / 60) + ' 分钟）' : (via ? '）' : '')),
+        sub: (bl.start_time ? '首班 ' + fmtTime(bl.start_time) : '') +
+             (bl.end_time ? (bl.start_time ? ' · ' : '') + '末班 ' + fmtTime(bl.end_time) : ''),
+        line: (bl.name || '').split('(')[0],
+        pts: bp });
+      if (bp.length) pts = pts.concat(bp);
+    }
+  });
+  const rides = (t.segments || []).filter(s => s.bus && s.bus.buslines && s.bus.buslines.length);
+  return {
+    kind: 'transit',
+    mode: 'transit',
+    duration: +t.duration || 0,
+    cost: +(t.cost) || 0,
+    walk: +t.walking_distance || 0,
+    distance: +t.distance || 0,
+    transfers: Math.max(0, rides.length - 1),
+    lines: rides.map(s => (s.bus.buslines[0].name || '').split('(')[0]),
+    segs, pts,
+    taxiCost: null
+  };
+}
+/* 驾车 / 步行 / 骑行：一个 path 对象 → 统一 plan */
+function planFromPath(p, mode){
+  const segs = []; let pts = [];
+  (p.steps || []).forEach(st => {
+    const sp = parsePoly(st.polyline);
+    if (!sp.length) return;
+    segs.push({ type:'ride', color: MODE_COLOR[mode],
+      text: esc(st.instruction || (mode === 'driving' ? '沿道路行驶' : '前行')),
+      pts: sp });
+    pts = pts.concat(sp);
+  });
+  return {
+    kind: mode, mode,
+    duration: +p.duration || 0,
+    cost: mode === 'driving' ? (+p.tolls || 0) : 0,
+    walk: mode === 'walking' ? (+p.distance || 0) : 0,
+    distance: +p.distance || 0,
+    transfers: null,
+    lights: mode === 'driving' ? (+p.traffic_lights || 0) : null,
+    lines: [],
+    segs, pts
+  };
+}
+
+/* ---------- 7. 查询：单段 ---------- */
+async function queryTransit(o, d, strategy, wantTaxi){
+  const j = await amap('/direction/transit/integrated', {
+    origin: o.lng.toFixed(6) + ',' + o.lat.toFixed(6),
+    destination: d.lng.toFixed(6) + ',' + d.lat.toFixed(6),
+    city: o.city || CITY_LIMIT || o.province || o.name,
+    cityd: d.city || CITY_LIMIT || d.province || d.name,
+    strategy: strategy, nightflag: '0', extensions: 'all'
+  });
+  const transits = (j.route && j.route.transits) || [];
+  const plans = transits.map(planFromTransit).filter(p => p.pts.length);
+  plans.sort((a, b) => a.duration - b.duration);
+  const taxi = j.route && +j.route.taxi_cost || 0;
+  if (wantTaxi){
+    try {
+      const dj = await amap('/direction/driving', {
+        origin: o.lng.toFixed(6) + ',' + o.lat.toFixed(6),
+        destination: d.lng.toFixed(6) + ',' + d.lat.toFixed(6),
+        extensions: 'base', strategy: '0'
+      });
+      const dp = dj.route && dj.route.paths && dj.route.paths[0];
+      if (dp) plans.forEach(p => { p.driveMin = Math.round((+dp.duration || 0) / 60); p.taxiCost = taxi || (+dp.tolls) || 0; });
+      if (dp && !taxi) plans.forEach(p => { p.taxiCost = 0; });
+    } catch (e){ /* 驾车对比失败不影响主流程 */ }
+    if (taxi) plans.forEach(p => { p.taxiCost = taxi; });
+  }
+  return plans;
+}
+async function queryDriving(o, d){
+  const j = await amap('/direction/driving', {
+    origin: o.lng.toFixed(6) + ',' + o.lat.toFixed(6),
+    destination: d.lng.toFixed(6) + ',' + d.lat.toFixed(6),
+    extensions: 'all', strategy: '0'
+  });
+  const paths = (j.route && j.route.paths) || [];
+  const plans = paths.map(p => planFromPath(p, 'driving')).filter(p => p.pts.length);
+  plans.sort((a, b) => a.duration - b.duration);
+  return plans;
+}
+async function queryWalking(o, d){
+  const j = await amap('/direction/walking', {
+    origin: o.lng.toFixed(6) + ',' + o.lat.toFixed(6),
+    destination: d.lng.toFixed(6) + ',' + d.lat.toFixed(6)
+  });
+  const paths = (j.route && j.route.paths) || [];
+  const plans = paths.map(p => planFromPath(p, 'walking')).filter(p => p.pts.length);
+  plans.sort((a, b) => a.duration - b.duration);
+  return plans;
+}
+async function queryBicycling(o, d){
+  const j = await amapV4('/direction/bicycling', {
+    origin: o.lng.toFixed(6) + ',' + o.lat.toFixed(6),
+    destination: d.lng.toFixed(6) + ',' + d.lat.toFixed(6)
+  });
+  const paths = (j.data && j.data.paths) || [];
+  const plans = paths.map(p => planFromPath(p, 'bicycling')).filter(p => p.pts.length);
+  plans.sort((a, b) => a.duration - b.duration);
+  return plans;
+}
+/** 按当前方式查一段，返回候选数组（至少 1 个，否则抛错） */
+async function queryLeg(o, d, mode, strategy, wantTaxi){
+  let plans;
+  if (mode === 'transit') plans = await queryTransit(o, d, strategy, !!wantTaxi);
+  else if (mode === 'driving') plans = await queryDriving(o, d);
+  else if (mode === 'walking') plans = await queryWalking(o, d);
+  else if (mode === 'bicycling') plans = await queryBicycling(o, d);
+  else throw new Error('未知出行方式');
+  if (!plans.length) throw new Error('未找到从「' + o.name + '」到「' + d.name + '」的' + MODE_LABEL[mode] + '方案');
+  return plans;
+}
+
+/* ---------- 7b. 跨城 ---------- */
+/* 两点是否不同城（城市名不同即视为跨城；未知则不判） */
+function isCross(o, d){
+  return !!(o && d && o.city && d.city && o.city !== d.city);
+}
+/* 地点在「城市范围」内没匹配到、被全国兜底命中时的提示条 */
+function scopeNoticeHTML(pts){
+  const hits = (pts || []).filter(p => p && p.outOfScope);
+  if (!hits.length) return '';
+  const list = hits.map(p => esc(p.name)).filter((v, i, a) => a.indexOf(v) === i).join('、');
+  return '<div class="note" style="border-left:3px solid #a8761c;margin:0 0 12px;background:rgba(168,118,28,.08)">' +
+    '城市范围「' + esc(hits[0].outOfScope) + '」内没匹配到 ' + list +
+    '，已按全国范围解析结果规划。若地点不对，请检查地点名，或清空「城市范围」。</div>';
+}
+/* 声明式跨城段：不调高德算路，只标注「如何跨城 + 自行安排」 */
+function crossPlan(o, d, cm){
+  const label = CROSS_LABEL[cm] || '跨城';
+  const pts = [[o.lat, o.lng], [d.lat, d.lng]];
+  const fromCity = o.city || o.province || o.name;
+  const toCity   = d.city || d.province || d.name;
+  return {
+    kind: 'cross', mode: 'cross', cross: true, crossMode: cm,
+    duration: 0, cost: 0, walk: 0, distance: 0, transfers: null,
+    lights: null, lines: [], taxiCost: null,
+    segs: [{
+      type: 'cross', color: '#DB2777',
+      text: '跨城段 · <b>' + esc(label) + '</b>：' + esc(fromCity) + ' → ' + esc(toCity) +
+            '（跨城交通请自行安排）',
+      pts
+    }],
+    pts
+  };
+}
+/* 手填「自理」段：不调高德算路，只按用户写的方式标注，不计时长 */
+function declaredPlan(o, d, text){
+  const pts = [[o.lat, o.lng], [d.lat, d.lng]];
+  const t = text || '自行安排';
+  return {
+    kind: 'declared', mode: 'declared', declared: true, customText: t,
+    duration: 0, cost: 0, walk: 0, distance: 0, transfers: null,
+    lights: null, lines: [], taxiCost: null,
+    segs: [{ type: 'declared', color: '#DB2777',
+      text: '本段自行安排 · <b>' + esc(t) + '</b>：' + esc(o.name) + ' → ' + esc(d.name),
+      pts }],
+    pts
+  };
+}
+/* 顶部标题里显示当前城市 / 跨城 / 全国 */
+function updateCityLabel(pts){
+  const el = $('#cityLabel'); if (!el) return;
+  const list = (pts || []).filter(Boolean);
+  const cities = list.map(p => p.city).filter(Boolean);
+  const uniq = Array.from(new Set(cities));
+  if (uniq.length > 1) el.textContent = '跨城';
+  else if (uniq.length === 1) el.textContent = uniq[0];
+  else el.textContent = CITY_LIMIT || '全国';
+}
+
+/* ---------- 8. 地图 ---------- */
+let map, tileLayer, routePane, ptPane, layerGroup;
+function initMap(){
+  map = L.map('map', { zoomControl: true, attributionControl: true, preferCanvas: true })
+        .setView([39.9042, 116.4074], 11);
+  map.createPane('routePane'); map.getPane('routePane').style.zIndex = 410;
+  map.createPane('ptPane');    map.getPane('ptPane').style.zIndex  = 620;
+  setTiles('vec');
+  layerGroup = L.layerGroup().addTo(map);
+}
+function setTiles(kind){
+  if (!map) return;               // 地图未就绪（Leaflet 加载失败）时直接跳过
+  if (tileLayer) map.removeLayer(tileLayer);
+  const url = kind === 'sat'
+    ? 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}'
+    : 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
+  tileLayer = L.tileLayer(url, {
+    subdomains: ['1', '2', '3', '4'], maxZoom: 18, minZoom: 3,
+    attribution: '&copy; 高德地图'
+  }).addTo(map);
+}
+function clearRoute(){ if (layerGroup) layerGroup.clearLayers(); }
+/** 画一个 plan（focusPts 用于 fitBounds，可为全部点） */
+function drawPlan(plan, theme, fitAll){
+  clearRoute();
+  const color = theme || PALETTE[0];
+  // 线：先描白底再画彩线（图纸风双层）
+  plan.segs.forEach(sg => {
+    const c = sg.type === 'walk' ? WALK_COLOR : (sg.color || color);
+    const dash = (sg.type === 'cross' || sg.type === 'declared') ? '7,9' : (sg.type === 'walk' ? '2,7' : null);
+    L.polyline(sg.pts, { pane:'routePane', color:'#ffffff', weight:8, opacity:.85, lineJoin:'round' }).addTo(layerGroup);
+    L.polyline(sg.pts, { pane:'routePane', color:c, weight:4, opacity:.95, lineJoin:'round',
+      dashArray: dash, lineCap:'round' }).addTo(layerGroup);
+  });
+  // 起终点
+  const allPts = plan.segs.reduce((a, s) => a.concat(s.pts), []);
+  if (allPts.length){
+    const a = allPts[0], b = allPts[allPts.length - 1];
+    dot(a, '#0F766E', '起点');
+    dot(b, '#7C3AED', '终点');
+  }
+  // 换乘 / 上车站点（仅公交）
+  if (plan.mode === 'transit'){
+    plan.segs.forEach(sg => {
+      if (sg.type === 'ride' && sg.pts.length){
+        const p = sg.pts[0];
+        L.circleMarker(p, { pane:'ptPane', radius:5, color:'#fff', weight:2, fillColor:color, fillOpacity:1 })
+          .bindTooltip(esc(sg.line || '乘车'), { direction:'top', offset:[0,-4] })
+          .addTo(layerGroup);
+      }
+    });
+  }
+  const b = L.latLngBounds(allPts);
+  if (allPts.length && b.isValid()) map.fitBounds(b, { padding: fitAll === false ? [40, 40] : [46, 46], paddingTopLeft:[20,20], maxZoom: 16 });
+}
+function dot(p, color, label){
+  L.circleMarker(p, { pane:'ptPane', radius:7, color:'#fff', weight:2.5, fillColor:color, fillOpacity:1 })
+    .bindTooltip(label, { direction:'top', offset:[0,-6] })
+    .addTo(layerGroup);
+}
+
+/* ---------- 9. 渲染：单次结果 ---------- */
+function renderSingle(){
+  const box = $('#results');
+  if (!S.plans.length){ box.innerHTML = ''; return; }
+  const o = S.origin, d = S.dests[0];
+  const cross = isCross(o, d);
+  let html = scopeNoticeHTML([o, d]);
+  if (cross){
+    html += '<div class="note" style="border-left:3px solid #DB2777;margin:0 0 12px;background:rgba(219,39,119,.07)">' +
+            '<b>跨城行程</b>：' + esc(o.city || o.name) + ' → ' + esc(d.city || d.name) +
+            '　跨城方式：<b>' + esc(CROSS_LABEL[S.crossMode] || '驾车') + '</b>' +
+            (S.crossMode === 'driving' ? '（高德实算）' : '（跨城段自行安排，页内不查跨城交通）') + '</div>';
+  }
+  // 逐段方式控件（单次只有一段）
+  html += legControlHTML(S.legMode, S.legCustom);
+  const curLabel = S.legCustom ? ('自理 · ' + S.legCustom) : (MODE_LABEL[S.legMode] || S.legMode);
+  html += '<div class="sec-t"><span class="n">方案</span><span class="t">候选路线</span>' +
+          '<span class="m">' + esc(curLabel) +
+          (!S.legCustom && S.legMode === 'transit' ? ' · ' + STRAT_LABEL[S.strategy] : '') + '</span></div>';
+  html += '<div style="font-size:11.5px;color:var(--ink-3);margin:-4px 0 10px">' +
+          esc(o.name) + ' → ' + esc(d.name) + '　共 ' + S.plans.length + ' 套（点击查看地图）</div>';
+  S.plans.forEach((p, i) => { html += planCard(p, i, i === S.sel); });
+  const sel = S.plans[S.sel];
+  if (sel) html += stepsPanel(sel);
+  box.innerHTML = html;
+  bindCardEvents();
+  bindSingleLegCtl();
+}
+/* 生成「本段方式」控件：下拉（多选池）+ 手填自理 */
+function modeOptions(cur, custom){
+  const list = S.modes.slice();
+  if (cur && !custom && cur !== '__custom' && !list.includes(cur)) list.unshift(cur);
+  let h = list.map(m =>
+    '<option value="' + m + '"' + ((!custom && cur === m) ? ' selected' : '') + '>' + esc(MODE_LABEL[m] || m) + '</option>'
+  ).join('');
+  h += '<option value="__custom"' + (custom ? ' selected' : '') + '>自定义（自理）</option>';
+  return h;
+}
+function legControlHTML(cur, custom, label){
+  return '<div class="legctl">' +
+    '<span class="lab">' + esc(label || '本段方式') + '</span>' +
+    '<select class="modesel">' + modeOptions(cur, !!custom) + '</select>' +
+    '<input class="modecust" placeholder="或手填方式，如 骑行+公交" value="' + esc(custom || '') + '">' +
+  '</div>';
+}
+function bindSingleLegCtl(){
+  const ctl = $('#results .legctl'); if (!ctl) return;
+  const sel = $('.modesel', ctl), inp = $('.modecust', ctl);
+  sel.addEventListener('change', async () => {
+    if (sel.value === '__custom'){ S.legCustom = inp.value.trim() || '自行安排'; S.legMode = S.modes[0]; }
+    else { S.legCustom = ''; S.legMode = sel.value; }
+    await recomputeSingleLeg();
+  });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); inp.blur(); } });
+  inp.addEventListener('blur', async () => {
+    const t = inp.value.trim();
+    if (t){ S.legCustom = t; sel.value = '__custom'; }
+    else if (sel.value === '__custom'){ S.legCustom = ''; S.legMode = S.legMode === 'declared' ? S.modes[0] : S.legMode; }
+    await recomputeSingleLeg();
+  });
+}
+async function recomputeSingleLeg(){
+  const o = S.origin, d = S.dests[0];
+  busy(true);
+  try {
+    if (S.legCustom){
+      S.plans = [ declaredPlan(o, d, S.legCustom) ]; S.sel = 0;
+    } else {
+      const plans = await queryLeg(o, d, S.legMode, S.strategy, S.legMode === 'transit');
+      S.plans = plans.slice(0, 5); S.sel = 0;
+    }
+    renderSingle();
+    const p = S.plans[S.sel];
+    drawPlan(p, (p.cross || p.declared) ? '#DB2777' : PALETTE[0]);
+  } catch (e){ handleApiError(e); }
+  finally { busy(false); }
+}
+function planCard(p, i, on){
+  const color = PALETTE[i % PALETTE.length];
+  if (p.cross){
+    return '<div class="card' + (on ? ' sel' : '') + '" data-i="' + i + '" style="--rc:#DB2777">' +
+      '<div class="top"><div class="bar"></div>' +
+        '<div class="mid"><div class="name">跨城 · ' + esc(CROSS_LABEL[p.crossMode] || '跨城') + '</div>' +
+          '<div class="lines">跨城段自行安排 · 不计高德时长</div></div>' +
+        '<div class="rt"><div class="big">—</div><div class="meta">跨城</div></div>' +
+      '</div></div>';
+  }
+  if (p.declared){
+    return '<div class="card' + (on ? ' sel' : '') + '" data-i="' + i + '" style="--rc:#DB2777">' +
+      '<div class="top"><div class="bar"></div>' +
+        '<div class="mid"><div class="name">自行安排 · ' + esc(p.customText || '自定义') + '</div>' +
+          '<div class="lines">该段不计高德时长，请自行安排</div></div>' +
+        '<div class="rt"><div class="big">—</div><div class="meta">自理</div></div>' +
+      '</div></div>';
+  }
+  const name = p.mode === 'transit'
+    ? (p.lines.length ? p.lines.join(' → ') : '公交方案')
+    : MODE_LABEL[p.mode];
+  let tags = '';
+  if (p.mode === 'transit'){
+    tags = '换乘 ' + p.transfers + ' 次 · 步行 ' + fmtDist(p.walk) + ' · 票价 ' + money(p.cost);
+  } else if (p.mode === 'driving'){
+    tags = fmtDist(p.distance) + ' · 过路费 ' + money(p.cost) +
+           (p.lights > 0 ? ' · ' + p.lights + ' 个红绿灯' : '');
+  } else {
+    tags = fmtDist(p.distance);
+  }
+  const flag = i === 0 ? '<span class="flag">最快</span>' : '';
+  return '<div class="card' + (on ? ' sel' : '') + '" data-i="' + i + '" style="--rc:' + color + '">' +
+    flag +
+    '<div class="top"><div class="bar"></div>' +
+      '<div class="mid"><div class="name">' + esc(name) + '</div><div class="lines">' + esc(tags) + '</div></div>' +
+      '<div class="rt"><div class="big">' + fmtDurShort(p.duration) + '<small> / 全程</small></div>' +
+        '<div class="meta">' + (p.mode === 'transit' ? money(p.cost) : (p.driveMin ? '驾车 ' + p.driveMin + ' min' : '')) + '</div>' +
+      '</div>' +
+    '</div></div>';
+}
+function stepsPanel(p){
+  if (p.cross){
+    let ch = '<div class="sec-t" style="margin-top:16px"><span class="n">明细</span><span class="t">跨城段</span>' +
+             '<span class="m">自行安排</span></div>';
+    ch += '<ol class="steps">';
+    p.segs.forEach(sg => { ch += '<li>' + sg.text + '</li>'; });
+    ch += '</ol>';
+    ch += '<div class="note">跨城段由你自行安排（高铁 / 火车 / 飞机 / 轮船 / 自驾），本页不查询跨城交通时长，' +
+          '到达目的地城市后可按本地出行方式另行规划。</div>';
+    return ch;
+  }
+  if (p.declared){
+    return '<div class="sec-t" style="margin-top:16px"><span class="n">明细</span><span class="t">自理段</span>' +
+           '<span class="m">不计时长</span></div>' +
+           '<ol class="steps">' + p.segs.map(sg => '<li>' + sg.text + '</li>').join('') + '</ol>' +
+           '<div class="note">这一段你选择了手填方式「<b>' + esc(p.customText || '自行安排') + '</b>」，' +
+           '本页不查询它的时长与路线，已从合计中剔除；如需精确计算，请在下拉里改回公交 / 驾车 / 步行 / 骑行。</div>';
+  }
+  let h = '<div class="sec-t" style="margin-top:16px"><span class="n">明细</span><span class="t">分段步骤</span>' +
+          '<span class="m">' + fmtDur(p.duration) + ' · ' + fmtDist(p.distance || 0) + '</span></div>';
+  if (p.mode === 'transit'){
+    h += '<div class="sumline"><span>总时长<b>' + fmtDur(p.duration) + '</b></span>' +
+         '<span>票价<b>' + money(p.cost) + '</b></span>' +
+         '<span>换乘<b>' + p.transfers + ' 次</b></span>' +
+         '<span>步行<b>' + fmtDist(p.walk) + '</b></span>' +
+         (p.driveMin ? '<span>打车约<b>' + p.driveMin + ' 分钟' + (p.taxiCost ? ' / ' + money(p.taxiCost) : '') + '</b></span>' : '') +
+         '</div>';
+  }
+  h += '<ol class="steps">';
+  p.segs.forEach(sg => {
+    h += '<li class="' + (sg.type === 'ride' ? 'ride' : '') + '">' + sg.text +
+         (sg.sub ? '<br><em>' + esc(sg.sub) + '</em>' : '') + '</li>';
+  });
+  h += '</ol>';
+  if (p.mode === 'transit' && p.taxiCost != null && !p.driveMin){
+    h += '<div class="note">打车参考：约 ' + money(p.taxiCost) + '（高德估算）。</div>';
+  }
+  return h;
+}
+
+/* ---------- 10. 渲染：多次结果 ---------- */
+/* 某一段在地图上的主题色 */
+function legColor(l, i){
+  if (l.plan.cross) return '#DB2777';
+  if (l.plan.declared) return '#DB2777';
+  return PALETTE[i % PALETTE.length];
+}
+function renderMulti(){
+  const m = S.multi; if (!m) return;
+  const box = $('#results');
+  const isSelf = l => l.plan.cross || l.plan.declared;
+  const totalDur = m.legs.reduce((a, l) => a + (isSelf(l) ? 0 : l.plan.duration), 0);
+  const selfLegs = m.legs.filter(isSelf).length;
+  let html = scopeNoticeHTML(m.legs.reduce((a, l) => a.concat([l.from, l.to]), []));
+  html += '<div class="sec-t"><span class="n">多站</span><span class="t">最优访问顺序</span>' +
+             '<span class="m">' + m.order.length + ' 站' + (m.loop ? ' · 闭环' : '') + '</span></div>';
+  const crossPairs = m.legs.filter(l => isCross(l.from, l.to)).length;
+  html += '<div style="font-size:11.5px;color:var(--ink-3);margin:-4px 0 10px">' +
+          '顺序经全排列比对（' + m.combos + ' 种），' +
+          (crossPairs ? '各段均为实时高德实测' : '下表各段为' + MODE_LABEL[m.mode] + '实测') +
+          (selfLegs ? '；含 ' + selfLegs + ' 段自理（不计时长）' : '') + '。</div>';
+  html += '<table class="legs"><thead><tr><th>#</th><th>行程段</th><th class="num">时长</th></tr></thead><tbody>';
+  m.legs.forEach((l, i) => {
+    const cls = 'legrow' + (i === S.selLeg ? ' on' : '');
+    let tcell;
+    if (l.plan.cross) tcell = '<span style="color:#DB2777;font-family:var(--f-mono);font-size:11px">跨城 ' + esc(CROSS_LABEL[l.plan.crossMode] || '') + '</span>';
+    else if (l.plan.declared) tcell = '<span style="color:#DB2777;font-family:var(--f-mono);font-size:11px">自理</span>';
+    else tcell = fmtDurShort(l.plan.duration);
+    html += '<tr class="' + cls + '" data-leg="' + i + '">' +
+      '<td><span class="sw" style="background:' + legColor(l, i) + '"></span>' + (i + 1) + '</td>' +
+      '<td>' + esc(l.from.name) + '<br><span style="color:var(--ink-3);font-size:11px">→ ' + esc(l.to.name) + '</span></td>' +
+      '<td class="num">' + tcell + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  html += '<div class="sumline"><span>' + (selfLegs ? '同城时长' : '合计时长') + '<b>' + fmtDur(totalDur) + '</b></span>' +
+          '<span>段数<b>' + m.legs.length + ' 段</b></span>' +
+          (selfLegs ? '<span>自理<b>' + selfLegs + ' 段 · 不计时长</b></span>' : '') +
+          (m.mode === 'transit' ? '<span>总票价<b>' + money(m.legs.reduce((a, l) => a + (l.plan.cost || 0), 0)) + '</b></span>' : '') +
+          '</div>';
+  html += '<div class="note">顺序由「驾车通行时间矩阵」近似求得（高德不提供公交矩阵），' +
+          '选定顺序后各段再走真实接口。' +
+          (selfLegs ? '自理 / 跨城段不计入高德时长。'
+                    : (crossPairs ? '跨城段按你选择的驾车方式由高德实测。' : '')) +
+          '共耗 ' + m.calls + ' 次接口调用。</div>';
+
+  // 逐段出行方式：每段一个下拉（多选池）+ 手填自理
+  html += '<div class="sec-t" style="margin-top:16px"><span class="n">方式</span>' +
+          '<span class="t">逐段设置</span><span class="m">每段都可改</span></div>';
+  m.legs.forEach((l, i) => {
+    const cur = l.customText ? '__custom' : l.mode;
+    html += legControlHTML(cur, l.customText, (i + 1) + '　' + l.from.name + ' → ' + l.to.name);
+  });
+  html += '<div style="font-size:11.5px;color:var(--ink-3);margin-top:10px">点击任一行，地图上高亮该段。</div>';
+
+  box.innerHTML = html;
+  $$('.legrow', box).forEach(tr => tr.addEventListener('click', () => {
+    S.selLeg = +tr.dataset.leg;
+    $$('.legrow', box).forEach(x => x.classList.toggle('on', +x.dataset.leg === S.selLeg));
+    const l = S.multi.legs[S.selLeg];
+    drawPlan(l.plan, legColor(l, S.selLeg));
+  }));
+  bindLegCtrls();
+  if (m.legs.length){
+    // 默认全览：把所有段拼成一张总览
+    drawOverview(m);
+  }
+}
+/* 多次模式：逐段方式控件绑定 */
+function bindLegCtrls(){
+  $$('#results .legctl').forEach((box, i) => {
+    const sel = $('.modesel', box), inp = $('.modecust', box);
+    if (!sel || !inp) return;
+    sel.addEventListener('change', async () => {
+      const l = S.multi.legs[i];
+      if (sel.value === '__custom') l.customText = inp.value.trim() || '自行安排';
+      else { l.customText = ''; l.mode = sel.value; }
+      await recomputeLeg(i);
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); inp.blur(); } });
+    inp.addEventListener('blur', async () => {
+      const t = inp.value.trim();
+      const l = S.multi.legs[i];
+      if (t){ l.customText = t; }
+      else if (sel.value === '__custom'){ l.customText = ''; }
+      await recomputeLeg(i);
+    });
+  });
+}
+async function recomputeLeg(i){
+  const l = S.multi.legs[i];
+  busy(true);
+  try {
+    if (l.customText){ l.plan = declaredPlan(l.from, l.to, l.customText); }
+    else {
+      const cr = isCross(l.from, l.to);
+      const plans = await queryLeg(l.from, l.to, cr ? 'driving' : l.mode, S.strategy, false);
+      l.plan = plans[0];
+    }
+    renderMulti();
+  } catch (e){ handleApiError(e); }
+  finally { busy(false); }
+}
+function drawOverview(m){
+  clearRoute();
+  const legsPts = [];
+  m.legs.forEach((l, i) => {
+    const color = legColor(l, i);
+    l.plan.segs.forEach(sg => {
+      const c = sg.type === 'walk' ? WALK_COLOR : (sg.color || color);
+      const dash = (sg.type === 'cross' || sg.type === 'declared') ? '7,9' : (sg.type === 'walk' ? '2,7' : null);
+      L.polyline(sg.pts, { pane:'routePane', color:'#fff', weight:8, opacity:.8 }).addTo(layerGroup);
+      L.polyline(sg.pts, { pane:'routePane', color:c, weight:4, opacity:.92,
+        dashArray: dash }).addTo(layerGroup);
+      legsPts.push.apply(legsPts, sg.pts);
+    });
+  });
+  const seq = [m.origin].concat(m.order);
+  if (m.loop) seq.push(m.origin);
+  const seen = [];
+  seq.forEach((p, i) => {
+    if (seen.some(q => q.lng === p.lng && q.lat === p.lat)) return;
+    seen.push(p);
+    dot([p.lat, p.lng], i === 0 ? '#0F766E' : '#7C3AED',
+        (i === 0 ? '起点 · ' : (i === seq.length - 1 && m.loop && i !== 0 ? '终点 · ' : '第' + i + '站 · ')) + p.name);
+  });
+  if (legsPts.length){
+    const b = L.latLngBounds(legsPts);
+    if (b.isValid()) map.fitBounds(b, { padding:[46, 46], maxZoom: 16 });
+  }
+}
+function bindCardEvents(){
+  $$('#results .card').forEach(c => c.addEventListener('click', () => {
+    S.sel = +c.dataset.i;
+    renderSingle();
+    drawPlan(S.plans[S.sel], PALETTE[S.sel % PALETTE.length]);
+  }));
+}
+
+/* ---------- 11. 输入区构建 ---------- */
+function buildDestRow(idx, val){
+  const row = document.createElement('div');
+  row.className = 'dest';
+  row.dataset.idx = idx;
+  row.innerHTML =
+    '<span class="no">' + (idx + 1) + '</span>' +
+    '<input class="inp dest-inp" placeholder="输入目的地，如「三里屯」" autocomplete="off">' +
+    (idx > 0 ? '<button class="del" title="删除">×</button>' : '') +
+    '<div class="suggest hidden"></div>';
+  const inp = $('.dest-inp', row);
+  if (val) inp.value = val.name || '';
+  attachSuggest(inp, $('.suggest', row), (pt) => {
+    S.dests[idx] = pt; inp.value = pt.name; updateModeHint();
+  });
+  inp.addEventListener('input', () => { S.dests[idx] = null; updateModeHint(); });
+  inp.addEventListener('blur', () => { resolveField(inp, idx, 'dest'); });
+  const del = $('.del', row);
+  if (del) del.addEventListener('click', () => {
+    S.dests.splice(idx, 1);
+    if (!S.dests.length) S.dests.push(null);
+    rebuildDests(); updateModeHint();
+  });
+  return row;
+}
+function rebuildDests(){
+  const wrap = $('#dests');
+  wrap.innerHTML = '';
+  S.dests.forEach((d, i) => wrap.appendChild(buildDestRow(i, d)));
+}
+function updateModeHint(){
+  const n = S.dests.filter(Boolean).length || S.dests.length;
+  const isMulti = S.dests.length > 1;
+  $('#modeHint').textContent = isMulti ? (S.dests.length + ' 个目的地 = 多次（含顺序优化）') : '1 个目的地 = 单次';
+  $('#loopWrap').style.display = isMulti ? 'flex' : 'none';
+}
+function buildPrefChips(){
+  const wrap = $('#prefChips');
+  wrap.innerHTML = '';
+  Object.keys(STRAT_LABEL).forEach(k => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (+k === S.strategy ? ' on red' : '');
+    b.textContent = STRAT_LABEL[k];
+    b.dataset.v = k;
+    b.addEventListener('click', () => {
+      S.strategy = +k;
+      $$('#prefChips .chip').forEach(x => x.classList.toggle('on', x === b));
+      $$('#prefChips .chip').forEach(x => x.classList.toggle('red', x === b));
+    });
+    wrap.appendChild(b);
+  });
+}
+function buildModeChips(){
+  const wrap = $('#modeChips');
+  wrap.innerHTML = '';
+  Object.keys(MODE_LABEL).forEach(k => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = MODE_LABEL[k];
+    b.dataset.v = k;
+    b.addEventListener('click', () => {
+      const i = S.modes.indexOf(k);
+      if (i >= 0){ if (S.modes.length === 1) return; S.modes.splice(i, 1); }
+      else S.modes.push(k);
+      S.mode = S.modes[0];
+      syncModeChips();
+    });
+    wrap.appendChild(b);
+  });
+  syncModeChips();
+}
+/* 多选后同步：芯片高亮 / 偏好显隐 / 提示文案 */
+function syncModeChips(){
+  $$('#modeChips .chip').forEach(x => {
+    const on = S.modes.includes(x.dataset.v);
+    x.classList.toggle('on', on);
+    x.classList.toggle('red', on);
+  });
+  $('#prefWrap').style.display = S.modes.includes('transit') ? 'block' : 'none';
+  $('#engHint').textContent = '可多选 · 已选 ' + S.modes.length + ' 种';
+}
+function buildCrossChips(){
+  const wrap = $('#crossChips');
+  wrap.innerHTML = '';
+  Object.keys(CROSS_LABEL).forEach(k => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (k === S.crossMode ? ' on red' : '');
+    b.textContent = CROSS_LABEL[k];
+    b.dataset.v = k;
+    b.addEventListener('click', () => {
+      S.crossMode = k;
+      $$('#crossChips .chip').forEach(x => x.classList.toggle('on', x === b));
+      $$('#crossChips .chip').forEach(x => x.classList.toggle('red', x === b));
+      // 已有结果时，切换跨城方式后自动重算
+      if (S.plans.length || S.multi){ try { doPlan(); } catch (e){} }
+    });
+    wrap.appendChild(b);
+  });
+}
+/* 联想：输入框 + 下拉 */
+function attachSuggest(inp, sug, onPick){
+  let timer = null, list = [], act = -1;
+  function close(){ sug.classList.add('hidden'); sug.innerHTML = ''; act = -1; list = []; }
+  function paint(){
+    if (!list.length){ close(); return; }
+    sug.innerHTML = list.map((t, i) =>
+      '<div class="it' + (i === act ? ' act' : '') + '" data-i="' + i + '">' +
+      '<b>' + esc(t.name) + '</b>' + (t.addr ? '<span>' + esc(t.addr) + '</span>' : '') + '</div>'
+    ).join('');
+    sug.classList.remove('hidden');
+    $$('.it', sug).forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const t = list[+el.dataset.i];
+        onPick({ name: t.name, lng: t.lng, lat: t.lat, city: t.city, province: t.province });
+        inp.value = t.name;
+        close();
+      });
+    });
+  }
+  inp.addEventListener('input', () => {
+    const kw = inp.value.trim();
+    clearTimeout(timer);
+    if (kw.length < 2 || !AMAP_KEY){ close(); return; }
+    timer = setTimeout(async () => {
+      try { list = await inputtips(kw); act = -1; paint(); }
+      catch (e){ close(); }
+    }, 340);
+  });
+  inp.addEventListener('keydown', (e) => {
+    if (sug.classList.contains('hidden')) return;
+    if (e.key === 'ArrowDown'){ act = Math.min(act + 1, list.length - 1); paint(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp'){ act = Math.max(act - 1, 0); paint(); e.preventDefault(); }
+    else if (e.key === 'Enter' && act >= 0){
+      const t = list[act]; onPick({ name: t.name, lng: t.lng, lat: t.lat, city: t.city, province: t.province }); inp.value = t.name; close(); e.preventDefault();
+    } else if (e.key === 'Escape'){ close(); }
+  });
+  inp.addEventListener('blur', () => setTimeout(close, 180));
+}
+/* 失焦兜底：把纯文本解析成坐标 */
+async function resolveField(inp, idx, which){
+  const txt = inp.value.trim();
+  if (!txt) return;
+  const cur = which === 'origin' ? S.origin : S.dests[idx];
+  if (cur && cur.name === txt) return;
+  try {
+    const g = await geocode(txt);
+    if (which === 'origin') S.origin = g; else S.dests[idx] = g;
+    inp.value = g.name;
+  } catch (e){
+    if (which === 'origin') S.origin = null; else S.dests[idx] = null;
+    inp.style.borderColor = '#c0392b';
+    setTimeout(() => { inp.style.borderColor = ''; }, 1600);
+  }
+}
+
+/* ---------- 12. 收集输入 + 规划 ---------- */
+function collect(){
+  return {
+    origin: S.origin,
+    dests: S.dests.filter(Boolean),
+    mode: S.mode, strategy: S.strategy, loop: S.loop
+  };
+}
+function busy(on){
+  const b = $('#goBtn');
+  b.classList.toggle('busy', on);
+  b.disabled = on;
+  $('.lb', b).textContent = on ? '正在查询…' : '规划路线';
+}
+function showErr(html){ $('#results').innerHTML = '<div class="err">' + html + '</div>'; }
+
+async function doPlan(){
+  const inp = collect();
+  // 补解析未选中的文本
+  if (!inp.origin && $('#originInp').value.trim()){
+    try { S.origin = await geocode($('#originInp').value.trim()); $('#originInp').value = S.origin.name; }
+    catch (e){ showErr('<b>起点无法识别</b>' + esc(e.message)); return; }
+  }
+  for (let i = 0; i < S.dests.length; i++){
+    if (!S.dests[i]){
+      const el = $$('#dests .dest-inp')[i];
+      const t = el && el.value.trim();
+      if (t){ try { S.dests[i] = await geocode(t); el.value = S.dests[i].name; } catch (e){ showErr('<b>目的地无法识别</b>' + esc(e.message)); return; } }
+    }
+  }
+  const c = collect();
+  if (!c.origin){ showErr('<b>还没填起点</b>请在第 1 栏输入出发地。'); return; }
+  if (!c.dests.length){ showErr('<b>还没填目的地</b>请在第 2 栏输入至少一个目的地。'); return; }
+
+  busy(true);
+  $('#srcVal').innerHTML = '查询中…';
+  $('#results').innerHTML = '<div class="emptymsg">正在向高德查询实时路线…</div>';
+  S.plans = []; S.sel = -1; S.multi = null; S.selLeg = -1;
+
+  try {
+    if (c.dests.length === 1) await runSingle(c);
+    else await runMulti(c);
+  } catch (e){
+    handleApiError(e);
+  } finally {
+    busy(false);
+  }
+}
+function handleApiError(e){
+  const msg = (e && e.message) || '';
+  const code = e && e.infocode;
+  let extra = '';
+  if (code === '10001' || /INVALID_USER_KEY/i.test(msg)) extra = 'Key 无效或类型不对（要「Web服务」Key），点顶部「改 Key」重填。';
+  else if (code === '10003' || /DAILY_QUERY_OVER_LIMIT/i.test(msg)) extra = '今日配额已用完（免费 Key 每天有限额），明天再试或换一个 Key。';
+  else if (code === '10009' || /PLAT_NOMATCH/i.test(msg)) extra = 'Key 与请求平台不匹配，请确认申请的是「Web服务」类型。';
+  else if (code === '10004' || code === '10021' || /CUQPS|LIMIT|TOO_FREQUENT/i.test(msg)) extra = '多次请求仍被限流，请等 10 秒左右再点一次「规划路线」。';
+  else if (/网络请求失败|请求超时|Failed to fetch/i.test(msg)) extra = '网络不稳定或请求超时，页面已自动重试多次；请检查网络后再点一次。';
+  else if (/未找到.*方案/.test(msg)) extra = '这两点之间确实没有该方式的可行路线（如超长距离骑行、跨城公交），换一种出行方式试试。';
+  else if (/ENGINE_RESPONSE_DATA_ERROR|NO_ROADS_IN_CITY|NO_DATA/i.test(msg)) extra = '该方式在这两点之间没有可用路线，换一种出行方式，或换个更具体的地点试试。';
+  else if (/找不到地点/.test(msg)) extra = '没查到该地点，换个更具体的名字（带上城市或地标），或检查「城市范围」是否填错。';
+  else if (/接口多次失败/.test(msg)) extra = '接口连续失败，通常是网络或限流所致，稍后再试。';
+  $('#srcVal').textContent = '查询失败';
+  showErr('<b>查询失败</b>' + esc(msg || '未知错误') + (extra ? '<br>' + extra : ''));
+}
+
+async function runSingle(c){
+  const o = c.origin, d = c.dests[0];
+  await ensureCity(o); await ensureCity(d);
+  updateCityLabel([o, d]);
+  const cross = isCross(o, d);
+  if (cross && S.crossMode !== 'driving'){
+    // 跨城且非驾车 → 声明式跨城段，不查跨城交通
+    S.legMode = '__custom'; S.legCustom = CROSS_LABEL[S.crossMode] || '跨城';
+    S.plans = [ crossPlan(o, d, S.crossMode) ];
+  } else if (cross && S.crossMode === 'driving'){
+    // 跨城 + 驾车 → 真实驾车算路
+    S.legMode = 'driving'; S.legCustom = '';
+    const plans = await queryLeg(o, d, 'driving', c.strategy, false);
+    S.plans = plans.slice(0, 5);
+  } else {
+    S.legMode = c.mode; S.legCustom = '';
+    const plans = await queryLeg(o, d, c.mode, c.strategy, c.mode === 'transit');
+    S.plans = plans.slice(0, 5);
+  }
+  S.sel = 0;
+  renderSingle();
+  const p = S.plans[0];
+  drawPlan(p, (p.cross || p.declared) ? '#DB2777' : PALETTE[0]);
+  setSource();
+}
+async function runMulti(c){
+  const mode = c.mode, strategy = c.strategy, loop = c.loop;
+  const nodes = [c.origin].concat(c.dests);   // 0 = 起点
+  const n = c.dests.length;
+
+  if (n > 7) throw new Error('目的地最多 7 个（当前 ' + n + ' 个），再多组合数会爆炸。');
+
+  await Promise.all(nodes.map(ensureCity));
+  updateCityLabel(nodes);
+
+  // 1) 建矩阵：对每个目标 j，用 distance 接口「多起点 → 单终点」
+  const proxyType = mode === 'walking' ? '3' : '1';   // 步行用步行时长，其余用驾车时长近似
+  const M = Array.from({ length: n + 1 }, () => new Array(n + 1).fill(Infinity));
+  let calls = 0;
+  for (let j = 0; j <= n; j++){
+    const others = [];
+    for (let i = 0; i <= n; i++) if (i !== j) others.push(i);
+    const origins = others.map(i => nodes[i].lng.toFixed(6) + ',' + nodes[i].lat.toFixed(6)).join('|');
+    const dj = nodes[j];
+    const jr = await amap('/distance', {
+      origins: origins, destination: dj.lng.toFixed(6) + ',' + dj.lat.toFixed(6), type: proxyType
+    });
+    calls++;
+    (jr.results || []).forEach(r => {
+      const oi = +r.origin_id - 1;         // 对应 others 的下标
+      const from = others[oi];
+      M[from][j] = +r.duration || (+r.distance / 1.2) || Infinity;
+    });
+  }
+
+  // 2) 全排列求最优顺序（起点固定 0）
+  const idxs = [];
+  for (let i = 1; i <= n; i++) idxs.push(i);
+  const perms = permute(idxs);
+  let best = null, bestCost = Infinity;
+  perms.forEach(perm => {
+    let cost = 0, prev = 0, ok = true;
+    for (const k of perm){ const w = M[prev][k]; if (!Number.isFinite(w)){ ok = false; break; } cost += w; prev = k; }
+    if (ok && loop){ const w = M[prev][0]; if (!Number.isFinite(w)) ok = false; else cost += w; }
+    if (ok && cost < bestCost){ bestCost = cost; best = perm.slice(); }
+  });
+  if (!best) throw new Error('无法在目的地之间建立可达关系，请检查这些地点是否可达。');
+
+  // 3) 按最优顺序实测每一段（best 里是「节点索引」，0=起点，1..n=第 i 个目的地）
+  const seq = [0].concat(best).concat(loop ? [0] : []);
+  const legs = [];
+  for (let i = 0; i < seq.length - 1; i++){
+    const from = nodes[seq[i]], to = nodes[seq[i + 1]];
+    const cr = isCross(from, to);
+    if (cr && S.crossMode !== 'driving'){
+      // 跨城且非驾车 → 声明式跨城段（不查高德）
+      legs.push({ from, to, mode: '__custom', customText: CROSS_LABEL[S.crossMode] || '跨城',
+                  plan: crossPlan(from, to, S.crossMode) });
+    } else {
+      const useMode = cr ? 'driving' : mode;
+      try {
+        const plans = await queryLeg(from, to, useMode, strategy, false);
+        calls++;
+        legs.push({ from, to, mode: useMode, customText: '', plan: plans[0] });
+      } catch (e){
+        // 某一段算不出路线时，不整单失败：降级为「自理」段并标注原因
+        const why = MODE_LABEL[useMode] + '无可行路线，自理';
+        legs.push({ from, to, mode: '__custom', customText: why,
+                    plan: declaredPlan(from, to, why) });
+      }
+    }
+  }
+  // best 是节点索引，转成实际目的地对象，供渲染使用（避免索引错位）
+  const orderedDests = best.map(i => nodes[i]);
+  S.multi = { origin: c.origin, order: orderedDests, loop, mode, legs, calls, combos: perms.length };
+  renderMulti();
+  setSource();
+}
+function permute(a){
+  const out = [];
+  const rec = (arr, cur) => {
+    if (!arr.length){ out.push(cur.slice()); return; }
+    for (let i = 0; i < arr.length; i++){
+      const rest = arr.slice(0, i).concat(arr.slice(i + 1));
+      cur.push(arr[i]); rec(rest, cur); cur.pop();
+    }
+  };
+  rec(a, []);
+  return out;
+}
+function setSource(){
+  $('#srcVal').innerHTML = '<b>高德实测</b>';
+}
+
+/* ---------- 13. Key 门 ---------- */
+function openGate(){
+  $('#gate').classList.remove('hidden');
+  $('#gateKey').value = AMAP_KEY || '';
+}
+function closeGate(){ $('#gate').classList.add('hidden'); }
+async function verifyKey(key){
+  const url = 'https://restapi.amap.com/v3/geocode/geo?address=' + encodeURIComponent('天安门') +
+              '&key=' + encodeURIComponent(key);
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 10000);
+  let j;
+  try { j = await (await fetch(url, { signal: ctl.signal })).json(); }
+  catch (e){ throw new Error(e.name === 'AbortError' ? '验证超时：高德无响应或网络较慢，请重试' : '网络请求失败，请检查网络后重试'); }
+  finally { clearTimeout(timer); }
+  if (j.status === '1' && j.geocodes && j.geocodes.length) return true;
+  const info = j.info || '';
+  if (info === 'INVALID_USER_KEY') throw new Error('Key 无效，请确认复制完整（32 位）');
+  if (info === 'DAILY_QUERY_OVER_LIMIT') throw new Error('该 Key 今日配额已用完，换一个或明天再试');
+  if (info === 'USERKEY_PLAT_NOMATCH') throw new Error('Key 类型不对，必须是「Web服务」平台');
+  throw new Error('验证失败：' + (info || '未知错误'));
+}
+async function gateSubmit(){
+  const key = $('#gateKey').value.trim();
+  const msg = $('#gateMsg');
+  const btn = $('#gateBtn');
+  msg.className = 'msg'; msg.textContent = '';
+  if (key.length < 20){ msg.className = 'msg bad'; msg.textContent = 'Key 看起来太短了，请确认复制完整。'; return; }
+  btn.classList.add('busy'); btn.disabled = true;
+  try {
+    await verifyKey(key);
+    AMAP_KEY = key;
+    lsSet(LS_AMAP, key);
+    msg.className = 'msg ok'; msg.textContent = '✓ 验证通过，正在进入…';
+    updateKeyChip();
+    setTimeout(() => { closeGate(); afterEnter(); }, 450);
+  } catch (e){
+    msg.className = 'msg bad'; msg.textContent = '✗ ' + e.message;
+  } finally {
+    btn.classList.remove('busy'); btn.disabled = false;
+  }
+}
+function updateKeyChip(){
+  const chip = $('#keyChip');
+  chip.classList.remove('hidden');
+  if (AMAP_KEY){ chip.className = 'ok'; chip.textContent = '● 高德 Key 已接入'; }
+  else { chip.className = 'bad'; chip.textContent = '○ 未接入 Key'; }
+}
+
+/* ---------- 14. AI 层 ---------- */
+function aiCfg(){
+  try { return JSON.parse(lsGet(LS_AI) || 'null'); } catch (e){ return null; }
+}
+function aiReady(){ const c = aiCfg(); return !!(c && c.base && c.model); }
+function refreshAiBox(){
+  const has = aiReady();
+  $('#aiCfgBtn').classList.toggle('hidden', !has);
+  $('#aiSetup').style.display = has ? 'none' : 'inline';
+  if (has){
+    const c = aiCfg();
+    $('#nlMsg').innerHTML = '已接入 <b style="color:var(--ink-2)">' + esc(c.model) + '</b>。用一句话描述，帮你拆成起终点（路线仍由高德计算）。';
+  }
+}
+function openAiModal(){
+  const c = aiCfg() || {};
+  if (c.preset) $('#aiPreset').value = c.preset;
+  const p = AI_PRESET[$('#aiPreset').value] || AI_PRESET.deepseek;
+  $('#aiBase').value = c.base || p.base;
+  $('#aiKey').value = c.key || '';
+  $('#aiModel').value = c.model || p.model;
+  $('#aiMsg').textContent = '';
+  updateAiHint();
+  $('#aiModal').classList.remove('hidden');
+}
+function applyPreset(){
+  const p = AI_PRESET[$('#aiPreset').value];
+  if (!p) return;
+  $('#aiBase').value = p.base;
+  $('#aiModel').value = p.model;
+  updateAiHint();
+}
+/* 火山方舟的 model 要填「推理接入点 ID」，给一句提示，避免填错 */
+function updateAiHint(){
+  const h = $('#aiHint'); if (!h) return;
+  if ($('#aiPreset').value === 'doubao'){
+    h.innerHTML = '火山方舟的「模型名」要填<b>推理接入点 ID</b>（<code style="font-family:var(--f-mono)">ep-</code> 开头，在方舟控制台「在线推理」里创建），不是 doubao-xxx 模型名。';
+  } else {
+    h.textContent = '';
+  }
+}
+async function aiSave(){
+  const cfg = {
+    preset: $('#aiPreset').value,
+    base: $('#aiBase').value.trim().replace(/\/+$/, ''),
+    key: $('#aiKey').value.trim(),
+    model: $('#aiModel').value.trim()
+  };
+  const msg = $('#aiMsg');
+  if (!cfg.base || !cfg.model){ msg.style.color = 'var(--red)'; msg.textContent = 'Base URL 和模型名不能为空。'; return; }
+  const btn = $('#aiSave'); btn.classList.add('busy'); btn.disabled = true;
+  msg.style.color = 'var(--ink-3)'; msg.textContent = '正在测试连接…';
+  try {
+    await aiChat(cfg, '只回复两个字：可以', '测试');
+    lsSet(LS_AI, JSON.stringify(cfg));
+    msg.style.color = 'var(--green)'; msg.textContent = '✓ 连接成功，已保存。';
+    refreshAiBox();
+    setTimeout(() => $('#aiModal').classList.add('hidden'), 700);
+  } catch (e){
+    msg.style.color = 'var(--red)';
+    msg.textContent = '✗ ' + e.message + '（若为跨域/CORS 错误，请换服务商或自建代理）';
+  } finally { btn.classList.remove('busy'); btn.disabled = false; }
+}
+async function aiChat(cfg, system, user){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const res = await fetch(cfg.base + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (cfg.key || 'none') },
+      body: JSON.stringify({
+        model: cfg.model, temperature: 0, stream: false,
+        messages: [{ role:'system', content: system }, { role:'user', content: user }]
+      }),
+      signal: ctl.signal
+    });
+    if (!res.ok){
+      let t = ''; try { t = await res.text(); } catch (e){}
+      throw new Error('HTTP ' + res.status + (t ? '：' + t.slice(0, 120) : ''));
+    }
+    const j = await res.json();
+    const txt = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+    if (!txt) throw new Error('模型未返回内容');
+    return txt;
+  } catch (e){
+    if (e.name === 'AbortError') throw new Error('请求超时（30 秒无响应）：请检查网络或更换服务商');
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+const NL_SYS =
+  '你是中文出行需求解析器。把用户的话解析成严格 JSON，只输出 JSON，不要任何解释或代码块标记。\n' +
+  '字段：{"origin":"起点地名","destinations":["目的地1","目的地2"],"mode":"transit|driving|walking|bicycling","strategy":0,"loop":false}\n' +
+  '规则：mode 默认 "transit"；strategy 默认 0（0最快捷1最经济2最少换乘3最少步行4最舒适5不乘地铁）；' +
+  'loop 仅当用户明确表示最后要回到起点/回程/闭环时为 true；地名保留用户原话，不要编造，不要补充未提到的地名。';
+async function aiParse(){
+  if (!aiReady()){ openAiModal(); return; }
+  const text = $('#nlInp').value.trim();
+  const msg = $('#nlMsg');
+  if (!text){ msg.textContent = '先说一句话，例如「从北京西站先去三里屯再去鸟巢」。'; return; }
+  const btn = $('#nlBtn'); btn.disabled = true; btn.textContent = '解析中';
+  msg.style.color = 'var(--ink-3)'; msg.textContent = '正在解析…';
+  try {
+    const raw = await aiChat(aiCfg(), NL_SYS, text);
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('模型返回的不是 JSON');
+    const obj = JSON.parse(m[0]);
+    if (!obj.origin || !Array.isArray(obj.destinations) || !obj.destinations.length)
+      throw new Error('解析结果缺少起点或目的地');
+    // 落到表单
+    const o = await geocode(obj.origin);
+    S.origin = o; $('#originInp').value = o.name;
+    const names = obj.destinations.slice(0, 7);
+    S.dests = [];
+    for (const nm of names){ try { S.dests.push(await geocode(nm)); } catch (e){ S.dests.push(null); } }
+    if (!S.dests.length) S.dests = [null];
+    rebuildDests();
+    if (obj.mode && MODE_LABEL[obj.mode]){ S.modes = [obj.mode]; S.mode = obj.mode; buildModeChips(); }
+    if (typeof obj.strategy === 'number' && STRAT_LABEL[obj.strategy] != null){ S.strategy = obj.strategy; buildPrefChips(); }
+    S.loop = !!obj.loop; $('#loopChk').checked = S.loop;
+    updateModeHint();
+    msg.style.color = 'var(--green)';
+    msg.textContent = '✓ 已填入表单：起点 ' + o.name + '，目的地 ' + names.length + ' 个。点上方「规划路线」出结果。';
+  } catch (e){
+    msg.style.color = 'var(--red)';
+    msg.textContent = '✗ ' + e.message;
+  } finally { btn.disabled = false; btn.textContent = '解析'; }
+}
+
+/* ---------- 14b. 浮动窗口：拖动 + 四边缩放 ---------- */
+function makeFloat(el){
+  const MINW = 320, MINH = 340;
+  // 拖动：抓报头（避开按钮 / 输入）
+  const bar = $('.masthead', el);
+  let drag = null;
+  bar.addEventListener('pointerdown', e => {
+    if (e.target.closest('button,a,input,select')) return;
+    drag = { x: e.clientX, y: e.clientY, l: el.offsetLeft, t: el.offsetTop };
+    try { bar.setPointerCapture(e.pointerId); } catch (_){}
+    e.preventDefault();
+  });
+  bar.addEventListener('pointermove', e => {
+    if (!drag) return;
+    let nl = drag.l + (e.clientX - drag.x);
+    let nt = drag.t + (e.clientY - drag.y);
+    nl = Math.max(0, Math.min(nl, window.innerWidth - 80));
+    nt = Math.max(0, Math.min(nt, window.innerHeight - 48));
+    el.style.left = nl + 'px'; el.style.top = nt + 'px';
+  });
+  const endDrag = e => { drag = null; try { bar.releasePointerCapture(e.pointerId); } catch (_){} };
+  bar.addEventListener('pointerup', endDrag);
+  bar.addEventListener('pointercancel', endDrag);
+  // 缩放：四边 / 四角
+  $$('.rz', el).forEach(h => {
+    let rs = null;
+    h.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      rs = { x: e.clientX, y: e.clientY, l: el.offsetLeft, t: el.offsetTop,
+             w: el.offsetWidth, h: el.offsetHeight, dir: h.dataset.dir };
+      try { h.setPointerCapture(e.pointerId); } catch (_){}
+      e.preventDefault();
+    });
+    h.addEventListener('pointermove', e => {
+      if (!rs) return;
+      const dx = e.clientX - rs.x, dy = e.clientY - rs.y;
+      let l = rs.l, t = rs.t, w = rs.w, hh = rs.h;
+      if (rs.dir.indexOf('e') >= 0) w = Math.max(MINW, rs.w + dx);
+      if (rs.dir.indexOf('s') >= 0) hh = Math.max(MINH, rs.h + dy);
+      if (rs.dir.indexOf('w') >= 0){ w = Math.max(MINW, rs.w - dx); l = rs.l + (rs.w - w); }
+      if (rs.dir.indexOf('n') >= 0){ hh = Math.max(MINH, rs.h - dy); t = rs.t + (rs.h - hh); }
+      el.style.left = l + 'px'; el.style.top = t + 'px';
+      el.style.width = w + 'px'; el.style.height = hh + 'px';
+    });
+    const endRs = e => { rs = null; try { h.releasePointerCapture(e.pointerId); } catch (_){} };
+    h.addEventListener('pointerup', endRs);
+    h.addEventListener('pointercancel', endRs);
+  });
+  window.addEventListener('resize', () => { if (map) map.invalidateSize(); });
+}
+
+/* ---------- 15. 启动 ---------- */
+function afterEnter(){
+  // 未填 Key 也能看界面，只是查不了
+  if (!AMAP_KEY) $('#srcVal').textContent = '未接入 Key';
+}
+function init(){
+  $('#app').classList.remove('hidden');
+  // 先绑定「Key 门」按钮：即使地图库加载失败，这两个按钮也必须可用（避免整页点不动）
+  $('#keyChip').addEventListener('click', openGate);
+  $('#gateBtn').addEventListener('click', gateSubmit);
+  $('#gateKey').addEventListener('keydown', e => { if (e.key === 'Enter') gateSubmit(); });
+  $('#gateSkip').addEventListener('click', () => { closeGate(); afterEnter(); });
+
+  let mapOK = true;
+  try { initMap(); }
+  catch (e){ mapOK = false; console.error('[地图初始化失败]', e); }
+
+  makeFloat($('#side'));
+  rebuildDests();
+  buildPrefChips();
+  buildModeChips();
+  buildCrossChips();
+  updateModeHint();
+  updateKeyChip();
+  refreshAiBox();
+
+  // 起点联想
+  attachSuggest($('#originInp'), $('#originSug'), (pt) => {
+    S.origin = pt; $('#originInp').value = pt.name;
+  });
+  $('#originInp').addEventListener('input', () => { S.origin = null; });
+  $('#originInp').addEventListener('blur', () => resolveField($('#originInp'), -1, 'origin'));
+  // 城市范围（可选）
+  $('#cityScopeInp').addEventListener('input', e => { CITY_LIMIT = e.target.value.trim(); });
+  $('#cityScopeInp').addEventListener('blur', e => { CITY_LIMIT = e.target.value.trim(); });
+
+  // 我的位置
+  $('#geoBtn').addEventListener('click', () => {
+    const h = $('#geoHint');
+    if (!navigator.geolocation){ h.textContent = '浏览器不支持定位'; return; }
+    h.textContent = '定位中…';
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const c = wgs2gcj(pos.coords.longitude, pos.coords.latitude);
+      let name = '我的位置', city = '', province = '';
+      try { const r = await regeoFull(c[0], c[1]); name = r.addr; city = r.city; province = r.province; } catch (e){}
+      S.origin = { name, lng: c[0], lat: c[1], city, province };
+      $('#originInp').value = name;
+      h.textContent = '';
+    }, err => { h.textContent = '定位被拒绝，请手输'; }, { timeout: 8000 });
+  });
+
+  $('#addDest').addEventListener('click', () => {
+    if (S.dests.length >= 7){ alert('最多 7 个目的地'); return; }
+    S.dests.push(null); rebuildDests(); updateModeHint();
+    const inps = $$('#dests .dest-inp'); if (inps.length) inps[inps.length - 1].focus();
+  });
+  $('#loopChk').addEventListener('change', e => { S.loop = e.target.checked; });
+  $('#goBtn').addEventListener('click', doPlan);
+  $('#nlBtn').addEventListener('click', aiParse);
+  $('#nlInp').addEventListener('keydown', e => { if (e.key === 'Enter') aiParse(); });
+  $('#aiSetup').addEventListener('click', openAiModal);
+  $('#aiCfgBtn').addEventListener('click', openAiModal);
+  $('#aiClose').addEventListener('click', () => $('#aiModal').classList.add('hidden'));
+  $('#aiPreset').addEventListener('change', applyPreset);
+  $('#aiSave').addEventListener('click', aiSave);
+  $('#aiClear').addEventListener('click', () => {
+    lsDel(LS_AI); refreshAiBox();
+    $('#aiMsg').style.color = 'var(--green)'; $('#aiMsg').textContent = '已清除 AI 配置。';
+  });
+  $$('#mapstat .tilebtns button').forEach(b => b.addEventListener('click', () => {
+    $$('#mapstat .tilebtns button').forEach(x => x.classList.toggle('on', x === b));
+    setTiles(b.dataset.tile);
+  }));
+
+  if (!mapOK){
+    // Leaflet 没加载成功：留在弹窗里给出明确提示，而不是变成死页
+    openGate();
+    const gm = $('#gateMsg');
+    gm.className = 'msg bad';
+    gm.textContent = '✗ 地图组件加载失败，请检查网络后刷新页面（也可点「先跳过」查看界面，但地图暂不可用）';
+    return;
+  }
+  if (AMAP_KEY) closeGate(); else openGate();
+}
+/* 等待 Leaflet 就绪后再启动：多 CDN 任一成功即可；全部失败或超时也会启动界面并给出明确提示 */
+function boot(){
+  let waited = 0;
+  (function tick(){
+    if (window.__leafletOK || window.__leafletFailed || typeof L !== 'undefined') return init();
+    if (waited >= 9000) return init();
+    waited += 200; setTimeout(tick, 200);
+  })();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+</script>
+</body>
+</html>
